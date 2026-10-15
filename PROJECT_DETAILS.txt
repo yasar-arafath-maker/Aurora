@@ -1,0 +1,99 @@
+================================================================================
+SOLARFIT AR v2 — COMPREHENSIVE PROJECT DETAILS & SPECIFICATIONS
+================================================================================
+Document Type   : Project Specifications, Architecture & Technical Overview
+Project Name    : SolarFit AR v2 (Interactive 3D WebXR Solar Simulator)
+Repository Path : c:\Users\athit\.gemini\antigravity-ide\scratch\solarfit-ar
+Author / Lead   : Antigravity AI Engineering Suite
+================================================================================
+
+1. PROJECT MISSION & PROBLEM STATEMENT
+--------------------------------------------------------------------------------
+Traditional rooftop solar sales and engineering assessments rely on static 2D
+aerial satellite imagery, slow CAD modeling software, or inaccurate estimation
+calculators. This causes high customer drop-off, inaccurate shading calculations,
+misaligned expectations, and costly site redesign visits.
+
+SolarFit AR v2 bridges this gap by providing an instant, browser-based, zero-install
+augmented reality (AR) and 3D simulation platform. Users can point their phone
+camera at their rooftop or open a 3D orbit simulation on their desktop to test
+physical 1:1 scale solar panels, analyze real sunlight trajectories, simulate
+thermal heat derating, test obstacle shading, and receive instant AI recommendations.
+
+
+2. PHOTOVOLTAIC (PV) TECHNOLOGY CATALOGUE
+--------------------------------------------------------------------------------
+The application integrates six distinct industry solar cell technologies, each
+modeled with accurate PBR optical properties, efficiency, and temperature coefficients:
+
+1. MONOCRYSTALLINE (P-Type Standard)
+   - Efficiency: ~21.0%
+   - Temp Coefficient: -0.36% / °C
+   - Aesthetics: Sleek dark obsidian crystal, anti-reflective micro-texture.
+   - Ideal For: Standard residential rooftops with moderate area constraints.
+
+2. POLYCRYSTALLINE (Legacy Multi-Crystal)
+   - Efficiency: ~16.0%
+   - Temp Coefficient: -0.42% / °C
+   - Aesthetics: Deep blue flake shimmer, visible wafer boundary grains.
+   - Status: Legacy / Phased-out. Highlights to users why modern upgrades yield 40% more.
+
+3. THIN-FILM (Cadmium Telluride / CIGS)
+   - Efficiency: ~11.5%
+   - Temp Coefficient: -0.21% / °C (High thermal resilience)
+   - Aesthetics: Uniform matte dark charcoal, lightweight frameless glass.
+   - Ideal For: High-temperature desert environments or curved architectural roofs.
+
+4. ADVANCED MONO PERC (Passivated Emitter & Rear Contact)
+   - Efficiency: ~22.5%
+   - Temp Coefficient: -0.34% / °C
+   - Aesthetics: Deep sapphire-black tint, dielectric passivation layer.
+   - Ideal For: Cost-to-efficiency balance in residential and commercial rooftops.
+
+5. ADVANCED TOPCon (Tunnel Oxide Passivated Contact — N-Type)
+   - Efficiency: ~24.0%
+   - Temp Coefficient: -0.30% / °C
+   - Degradation: Ultra-low LID (Light Induced Degradation) < 1.0% in year 1.
+   - Aesthetics: Seamless velvet black, 16-busbar micro-grid lines.
+   - Status: Top AI Recommendation for hot urban rooftops with high space constraints.
+
+6. BIFACIAL DUAL-GLASS (Rear-Contact Albedo Harvesting)
+   - Efficiency: ~22.8% front + up to 30% rear harvest
+   - Bifaciality Factor: 80% (0.80)
+   - Architecture: Dual-tempered glass, elevated mounting clearance (+0.45m).
+   - Ideal For: High-albedo surfaces (White TPO membrane roofs, crushed stone, snow).
+
+
+3. ENVIRONMENTAL & ROOFTOP SURFACE MATERIAL MATRIX
+--------------------------------------------------------------------------------
+SolarFit AR simulates the physics of roof surface reflections (albedo coefficient):
+
+- Standard Grey Concrete: Albedo = 0.20 (Standard diffuse reflection)
+- White TPO / PVC Membrane: Albedo = 0.75 (High reflectivity, ideal for Bifacial)
+- Crushed Gravel / Stone: Albedo = 0.18 (Moderate diffuse scattering)
+- Metal Zinc / Standing Seam: Albedo = 0.15 (Direct specular glare reflection)
+
+
+4. HARDWARE & SENSOR INTEGRATIONS
+--------------------------------------------------------------------------------
+- Camera Stream: WebRTC `navigator.mediaDevices.getUserMedia` with video frame sampling.
+- Spatial Tracking: WebXR `hit-test` with local-floor reference spaces.
+- Orientation Tracking: Web DeviceOrientationEvent (Alpha, Beta, Gamma) with compass heading.
+- Sun Tracking: Astronomical solar positioning engine calculating Solar Zenith,
+  Azimuth, Hour Angle, and Declination for user's geographical coordinates.
+- Ambient Light Probe: Real-time scene brightness estimation from camera video luma.
+
+
+5. PROJECT DIRECTORY & CODEBASE STRUCTURE
+--------------------------------------------------------------------------------
+├── solarfit-ar.html          # Core single-file WebXR 3D engine, UI & shaders
+├── ai-solar-engine.js        # Multi-Criteria Decision Analysis & XAI engine
+├── server.js                 # Standalone static Node.js HTTP server (Port 4173)
+├── test_ai_solar_engine.js   # Unit testing suite for physics & decision matrix
+├── execute_steps_5_to_15.js  # CDP-based automated interactive testing script
+├── run_live_steps_9_to_15.js # Live session verification runner
+├── WORKING.txt               # Step-by-step user working guide
+├── PROJECT_DETAILS.txt       # This document (Specifications & Catalogue)
+├── TECHNICAL_IMPLEMENTATION.txt # Deep mathematical & engineering details
+└── FINAL_REPORT.txt          # Verification benchmarks & test audit report
+================================================================================

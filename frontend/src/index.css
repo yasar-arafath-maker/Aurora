@@ -1,0 +1,414 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #0a1012;
+  --panel: #10191c;
+  --panel-2: #152023;
+  --line: #233034;
+  --text: #e7eef0;
+  --text-dim: #8fa5ab;
+  --text-faint: #526266;
+  --teal: #22e6c4;
+  --amber: #ffb238;
+  --blue: #5fa8ff;
+  --red: #ff6b5e;
+  --green: #63d98a;
+}
+
+body {
+  margin: 0;
+  background-color: var(--bg);
+  color: var(--text);
+  font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Numeric instrumentation uses IBM Plex Mono exclusively */
+.font-mono,
+.instrument-number,
+.scada-metric,
+.telemetry-val {
+  font-family: 'IBM Plex Mono', monospace !important;
+  font-feature-settings: "tnum" 1, "zero" 1;
+}
+
+/* ═════════════════════════════════════════════════════════════════════
+   SCADA PANEL SYSTEM — Industrial Control Room Aesthetic
+   ═════════════════════════════════════════════════════════════════════ */
+
+.scada-panel {
+  background-color: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  position: relative;
+  backdrop-filter: blur(8px);
+}
+
+.scada-panel-nested {
+  background-color: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+
+/* ═════════════════════════════════════════════════════════════════════
+   GLOW EFFECTS — Active status indicators & borders
+   ═════════════════════════════════════════════════════════════════════ */
+
+.glow-teal {
+  box-shadow: 0 0 12px -2px rgba(34, 230, 196, 0.25),
+              inset 0 0 20px -10px rgba(34, 230, 196, 0.08);
+  border-color: rgba(34, 230, 196, 0.4);
+}
+
+.glow-amber {
+  box-shadow: 0 0 12px -2px rgba(255, 178, 56, 0.25),
+              inset 0 0 20px -10px rgba(255, 178, 56, 0.08);
+  border-color: rgba(255, 178, 56, 0.4);
+}
+
+.glow-red {
+  box-shadow: 0 0 12px -2px rgba(255, 107, 94, 0.3),
+              inset 0 0 20px -10px rgba(255, 107, 94, 0.1);
+  border-color: rgba(255, 107, 94, 0.5);
+}
+
+.glow-green {
+  box-shadow: 0 0 12px -2px rgba(99, 217, 138, 0.25),
+              inset 0 0 20px -10px rgba(99, 217, 138, 0.08);
+  border-color: rgba(99, 217, 138, 0.4);
+}
+
+.glow-blue {
+  box-shadow: 0 0 12px -2px rgba(95, 168, 255, 0.25),
+              inset 0 0 20px -10px rgba(95, 168, 255, 0.08);
+  border-color: rgba(95, 168, 255, 0.4);
+}
+
+/* ═════════════════════════════════════════════════════════════════════
+   ENERGY FLOW ANIMATIONS — SVG particle movement along paths
+   ═════════════════════════════════════════════════════════════════════ */
+
+@keyframes dash-flow {
+  to {
+    stroke-dashoffset: -40;
+  }
+}
+
+.animate-flow-forward {
+  stroke-dasharray: 6, 6;
+  animation: dash-flow 1.5s linear infinite;
+}
+
+.animate-flow-fast {
+  stroke-dasharray: 4, 4;
+  animation: dash-flow 0.8s linear infinite;
+}
+
+/* ═════════════════════════════════════════════════════════════════════
+   AMBIENT SCANLINE — CRT / industrial control room feel
+   ═════════════════════════════════════════════════════════════════════ */
+
+@keyframes scanline {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(100vh); }
+}
+
+.scanline-overlay {
+  pointer-events: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 9999;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(34, 230, 196, 0.015) 2px,
+    rgba(34, 230, 196, 0.015) 4px
+  );
+  opacity: 0.4;
+}
+
+/* ═════════════════════════════════════════════════════════════════════
+   GLOWING BORDERS — Animated border sweep for primary panels
+   ═════════════════════════════════════════════════════════════════════ */
+
+@keyframes border-glow-sweep {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.accent-top-animated {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, 
+    transparent 0%, 
+    var(--teal) 20%, 
+    var(--blue) 50%, 
+    var(--teal) 80%, 
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: border-glow-sweep 3s ease-in-out infinite;
+}
+
+/* ═════════════════════════════════════════════════════════════════════
+   PULSING GLOW RING — For live status dots
+   ═════════════════════════════════════════════════════════════════════ */
+
+@keyframes glow-ring {
+  0%, 100% { box-shadow: 0 0 4px 0 currentColor; }
+  50% { box-shadow: 0 0 12px 3px currentColor; }
+}
+
+.live-dot {
+  animation: glow-ring 2s ease-in-out infinite;
+}
+
+/* ═════════════════════════════════════════════════════════════════════
+   SHIMMER LOADING — Skeleton & text shimmer effect
+   ═════════════════════════════════════════════════════════════════════ */
+
+@keyframes shimmer-slide {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+.shimmer-text {
+  position: relative;
+  overflow: hidden;
+}
+
+.shimmer-text::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg,
+    transparent 0%,
+    rgba(34, 230, 196, 0.12) 45%,
+    rgba(34, 230, 196, 0.25) 50%,
+    rgba(34, 230, 196, 0.12) 55%,
+    transparent 100%
+  );
+  animation: shimmer-slide 2.5s ease-in-out infinite;
+}
+
+/* ═════════════════════════════════════════════════════════════════════
+   DATA STREAM — Vertical scrolling data effect
+   ═════════════════════════════════════════════════════════════════════ */
+
+@keyframes data-rain {
+  0% { transform: translateY(-100%); opacity: 0; }
+  10% { opacity: 0.3; }
+  90% { opacity: 0.3; }
+  100% { transform: translateY(100%); opacity: 0; }
+}
+
+/* ═════════════════════════════════════════════════════════════════════
+   BREATHING AMBIENT — Subtle panel breathing for "alive" feel
+   ═════════════════════════════════════════════════════════════════════ */
+
+@keyframes ambient-breathe {
+  0%, 100% { border-color: rgba(34, 230, 196, 0.15); }
+  50% { border-color: rgba(34, 230, 196, 0.35); }
+}
+
+.breathe-teal {
+  animation: ambient-breathe 4s ease-in-out infinite;
+}
+
+@keyframes ambient-breathe-amber {
+  0%, 100% { border-color: rgba(255, 178, 56, 0.15); }
+  50% { border-color: rgba(255, 178, 56, 0.35); }
+}
+
+.breathe-amber {
+  animation: ambient-breathe-amber 4s ease-in-out infinite;
+}
+
+/* ═════════════════════════════════════════════════════════════════════
+   LOGIN AURORA GRADIENT — Background ambient glow
+   ═════════════════════════════════════════════════════════════════════ */
+
+@keyframes aurora-shift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.aurora-bg {
+  background: radial-gradient(ellipse at 20% 30%, rgba(34, 230, 196, 0.08), transparent 60%),
+              radial-gradient(ellipse at 80% 70%, rgba(95, 168, 255, 0.06), transparent 60%),
+              radial-gradient(ellipse at 50% 90%, rgba(255, 178, 56, 0.04), transparent 60%),
+              var(--bg);
+  background-size: 200% 200%;
+  animation: aurora-shift 10s ease-in-out infinite;
+}
+
+/* ═════════════════════════════════════════════════════════════════════
+   FLOATING GRID PARTICLES — Login background ambient particles
+   ═════════════════════════════════════════════════════════════════════ */
+
+@keyframes float-particle {
+  0% { transform: translateY(100vh) rotate(0deg); opacity: 0; }
+  10% { opacity: 1; }
+  90% { opacity: 1; }
+  100% { transform: translateY(-10vh) rotate(180deg); opacity: 0; }
+}
+
+/* ═════════════════════════════════════════════════════════════════════
+   SUBSTATION GRID BACKGROUND — Control room engineering blueprint
+   ═════════════════════════════════════════════════════════════════════ */
+
+.scada-grid-bg {
+  background-size: 24px 24px;
+  background-image: 
+    linear-gradient(to right, rgba(35, 48, 52, 0.3) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(35, 48, 52, 0.3) 1px, transparent 1px);
+}
+
+/* ═════════════════════════════════════════════════════════════════════
+   SCROLLBAR — SCADA terminal style
+   ═════════════════════════════════════════════════════════════════════ */
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg);
+}
+::-webkit-scrollbar-thumb {
+  background: #233034;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #35474c;
+}
+
+/* ═════════════════════════════════════════════════════════════════════
+   RANGE SLIDER — Custom styled range inputs for SCADA controls
+   ═════════════════════════════════════════════════════════════════════ */
+
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+  height: 20px;
+}
+
+input[type="range"]::-webkit-slider-runnable-track {
+  background: linear-gradient(to right, var(--line), var(--panel-2));
+  height: 4px;
+  border-radius: 2px;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  background: var(--teal);
+  border-radius: 50%;
+  margin-top: -5px;
+  box-shadow: 0 0 8px rgba(34, 230, 196, 0.4);
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+input[type="range"]::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+  box-shadow: 0 0 14px rgba(34, 230, 196, 0.6);
+}
+
+input[type="range"].accent-amber::-webkit-slider-thumb {
+  background: var(--amber);
+  box-shadow: 0 0 8px rgba(255, 178, 56, 0.4);
+}
+
+input[type="range"].accent-blue::-webkit-slider-thumb {
+  background: var(--blue);
+  box-shadow: 0 0 8px rgba(95, 168, 255, 0.4);
+}
+
+/* ═════════════════════════════════════════════════════════════════════
+   BUTTON RIPPLE — Material-like ripple on action buttons
+   ═════════════════════════════════════════════════════════════════════ */
+
+@keyframes ripple {
+  to {
+    transform: scale(4);
+    opacity: 0;
+  }
+}
+
+.btn-ripple {
+  position: relative;
+  overflow: hidden;
+}
+
+.btn-ripple::after {
+  content: '';
+  position: absolute;
+  border-radius: 50%;
+  transform: scale(0);
+  opacity: 0.3;
+  background: rgba(255, 255, 255, 0.3);
+  width: 100px;
+  height: 100px;
+  top: 50%;
+  left: 50%;
+  margin-top: -50px;
+  margin-left: -50px;
+}
+
+.btn-ripple:active::after {
+  animation: ripple 0.5s ease-out;
+}
+
+/* ═════════════════════════════════════════════════════════════════════
+   TYPE EFFECT — Simulated terminal typing cursor
+   ═════════════════════════════════════════════════════════════════════ */
+
+@keyframes blink-cursor {
+  0%, 100% { border-right-color: var(--teal); }
+  50% { border-right-color: transparent; }
+}
+
+.typing-cursor {
+  border-right: 2px solid var(--teal);
+  animation: blink-cursor 0.8s step-end infinite;
+  padding-right: 2px;
+}
+
+/* ═════════════════════════════════════════════════════════════════════
+   ENERGY PARTICLE DOT — Moving dot along flow paths
+   ═════════════════════════════════════════════════════════════════════ */
+
+@keyframes particle-flow {
+  0% { offset-distance: 0%; opacity: 0; }
+  10% { opacity: 1; }
+  90% { opacity: 1; }
+  100% { offset-distance: 100%; opacity: 0; }
+}
+
+/* ═════════════════════════════════════════════════════════════════════
+   NOTIFICATION BADGE BOUNCE
+   ═════════════════════════════════════════════════════════════════════ */
+
+@keyframes badge-bounce {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.2); }
+}
+
+.badge-pulse {
+  animation: badge-bounce 2s ease-in-out infinite;
+}

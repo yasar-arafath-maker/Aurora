@@ -1,0 +1,143 @@
+================================================================================
+SOLARFIT AR v2 — DEEP TECHNICAL IMPLEMENTATION & ENGINEERING GUIDE
+================================================================================
+Document Type   : Deep Engineering & Mathematical Implementation Documentation
+Project Name    : SolarFit AR v2 (Interactive 3D WebXR Solar Simulator)
+Repository Path : c:\Users\athit\.gemini\antigravity-ide\scratch\solarfit-ar
+Technology Stack: Three.js r160, WebXR API, WebGL2 GLSL Shaders, Web Audio API,
+                  TailwindCSS, Vanilla JavaScript (ES Modules), Node.js HTTP Server
+================================================================================
+
+1. GRAPHICS ENGINE & 3D RENDERING PIPELINE
+--------------------------------------------------------------------------------
+SolarFit AR v2 utilizes Three.js (r160) coupled with modern WebGL2 rendering:
+
+- PBR (Physically-Based Rendering):
+  Solar panel top surfaces employ customized `MeshPhysicalMaterial` with:
+  * Roughness: 0.06 (anti-reflective glass finish)
+  * Metalness: 0.10
+  * Clearcoat: 1.0 with Clearcoat Roughness of 0.03
+  * Environment Map Intensity: 1.9 for realistic sky reflections
+
+- Dynamic Lighting & Shadow Engine:
+  * DirectionalLight represents the real astronomical Sun position.
+  * Orthographic shadow camera bounds tightly around the array (5m box, 2048x2048 map).
+  * Soft shadows enabled via `THREE.PCFSoftShadowMap`.
+  * Ambient light dynamically interpolates between dusk, noon, and overcast hues.
+
+
+2. CUSTOM GLSL SHADERS IMPLEMENTATION
+--------------------------------------------------------------------------------
+
+A. FLIR IR THERMAL HEATMAP SHADER (`thermalMat`)
+Replaces the standard PBR texture with an Ironbow false-color thermal gradient:
+- Uniforms:
+  `uAmbient`     : Current ambient temperature (°C)
+  `uIrradiance`  : Current solar irradiance (W/m²)
+  `uTime`        : Dynamic phase oscillation for cell hot-spot shimmer
+
+- GLSL Colormap Algorithm:
+  Maps computed cell temperature T (from cold 20°C up to 75°C) into normalized [0, 1]:
+  ```glsl
+  vec3 ironbow(float t) {
+    // 5-point piecewise thermal spectrum:
+    // Purple (cold) -> Blue -> Magenta -> Red -> Yellow -> White (hot spot)
+    vec3 c0 = vec3(0.05, 0.02, 0.15); // Cold base
+    vec3 c1 = vec3(0.25, 0.05, 0.55); // Low heat
+    vec3 c2 = vec3(0.85, 0.15, 0.35); // Moderate heat
+    vec3 c3 = vec3(1.00, 0.60, 0.05); // High heat
+    vec3 c4 = vec3(1.00, 1.00, 0.90); // Hot spot peak
+    if (t < 0.25) return mix(c0, c1, t / 0.25);
+    if (t < 0.50) return mix(c1, c2, (t - 0.25) / 0.25);
+    if (t < 0.75) return mix(c2, c3, (t - 0.50) / 0.25);
+    return mix(c3, c4, (t - 0.75) / 0.25);
+  }
+  ```
+
+B. AERODYNAMIC WIND STREAMLINE SHADER (`windMat`)
+Visualizes turbulent wind flow lines across the solar array structure:
+- Employs an instanced buffer line geometry (40 streamline paths with 32 vertices each).
+- Vertex shader applies trigonometric curl noise to simulate aerodynamic laminar
+  boundary-layer flow across the tilted panel surfaces.
+- Fragment shader produces moving dashed pulses with alpha fading.
+
+C. PROCEDURAL HOLOGRAPHIC SCANNING GRID (`grid`)
+- Custom shader material on a 4.4m x 4.4m plane.
+- Produces concentric radar scanning rings and minor/major grid intersections
+  using `fwidth()` screen-space derivative antialiasing.
+
+
+3. PROCEDURAL WEB AUDIO SYNTHESIS ENGINE (`ProceduralAudio`)
+--------------------------------------------------------------------------------
+To achieve zero-asset lightweight performance without external sound files,
+SolarFit AR integrates a pure mathematical procedural audio synthesizer using the
+native Web Audio API (`AudioContext`):
+
+- `playWhoosh()`:
+  Sine oscillator sweeping from 300 Hz down to 80 Hz with exponential gain decay
+  (simulates kinetic assembly whoosh).
+- `playArc()`:
+  Sawtooth oscillator with random frequency modulation (1200 Hz - 2000 Hz) and rapid
+  0.05s burst (simulates electrical arc welding during panel lock).
+- `playImpact()`:
+  Triangle wave sweeping from 140 Hz down to 40 Hz over 0.3s (simulates physical
+  touchdown of aluminum racking on roof).
+- `playThermal()`:
+  Sine wave sweeping from 520 Hz upward to 1040 Hz (simulates IR thermal sensor scan).
+- `playWind()`:
+  Linear pitch sweep from 220 Hz to 440 Hz over 0.25s (simulates aerodynamic air gust).
+- `playSnap()`:
+  Triangle wave descending from 800 Hz to 150 Hz over 50ms (simulates module rail click).
+- `playCineChime()`:
+  Pure musical sine wave tuned to E5 (659.25 Hz) with 0.6s gentle exponential decay.
+
+
+4. MULTI-CRITERIA DECISION ANALYSIS (MCDA) & XAI MATHEMATICS
+--------------------------------------------------------------------------------
+Implemented inside `ai-solar-engine.js`:
+
+A. NOCT Real Cell Operating Temperature Equation:
+$$T_{cell} = T_{amb} + \left( \frac{NOCT - 20}{800} \right) \cdot G$$
+Where:
+- $T_{amb}$ = Ambient temperature (e.g., 28°C)
+- $NOCT$ = Nominal Operating Cell Temperature (typically 45°C)
+- $G$ = Incident Global Horizontal / Direct Normal Irradiance ($W/m^2$)
+
+B. Temperature Derating Power Loss:
+$$P_{loss} = |\gamma_{temp}| \cdot (T_{cell} - 25^\circ C)$$
+Where $\gamma_{temp}$ is the temperature coefficient (%/°C).
+For TOPCon (-0.30%/°C), at 49°C cell temp: Loss = 0.30 * 24 = 7.2%.
+For Polycrystalline (-0.42%/°C), Loss = 0.42 * 24 = 10.1%.
+
+C. Multi-Criteria Scoring Formula:
+$$CompositeScore = \sum (Weight_i \cdot Score_i)$$
+Criteria Weights:
+- Area Efficiency ($w = 0.30$): Rewards higher conversion efficiency per m².
+- Thermal Resilience ($w = 0.22$): Rewards low temperature coefficient in hot climates.
+- Albedo Gain ($w = 0.20$): Evaluates rear-harvest potential on high-albedo roofs.
+- Lifetime Reliability ($w = 0.28$): Evaluates low annual degradation (<0.4%/yr).
+
+D. Explainable AI (XAI) Generation:
+Dynamically synthesizes natural language justifications for recommendations based on
+numerical deltas between the #1 candidate and other options.
+
+
+5. ARRAY GEOMETRY & SHADING PITCH MATHEMATICS
+--------------------------------------------------------------------------------
+A. Optimal Inter-Row Pitch Spacing:
+To prevent shadow casting from front rows onto rear rows during the lowest winter
+sun altitude angle ($\alpha$):
+$$Pitch = L \cdot \left( \cos\beta + \frac{\sin\beta}{\tan\alpha} \right)$$
+Where $L$ is module length (1.72m) and $\beta$ is tilt angle (15°).
+Calculated optimal spacing = 1.85 meters.
+
+B. DC Capacity Rating:
+$$kWp = Columns \times Rows \times ModulePower$$
+For 3 Cols × 2 Rows (6 modules) with 400W TOPCon:
+$kWp = 6 \times 0.400 = 2.40\text{ kWp}$.
+
+C. Daily Energy Estimation:
+$$Yield_{daily} = kWp \times PeakSunHours \times PR$$
+With Peak Sun Hours = 4.8 hrs and Performance Ratio (PR) = 0.80:
+$Yield_{daily} = 2.4 \times 4.8 \times 0.80 \approx 9.2\text{ kWh/day}$.
+================================================================================

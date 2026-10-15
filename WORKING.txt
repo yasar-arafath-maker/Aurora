@@ -1,0 +1,130 @@
+================================================================================
+SOLARFIT AR v2 — COMPLETE OPERATIONAL & WORKING WORKFLOW
+================================================================================
+Document Type   : Operational & Functional Working Guide
+Project Name    : SolarFit AR v2 (Interactive 3D WebXR Solar Simulator)
+Version         : 2.2.0-Production
+Language        : Standard Technical English
+================================================================================
+
+1. INTRODUCTION & CORE CONCEPT
+--------------------------------------------------------------------------------
+SolarFit AR v2 is a next-generation augmented reality (WebXR) and 3D web-based
+solar energy rooftop simulation platform. It enables solar engineers, residential
+homeowners, and commercial facility managers to visualize, configure, and
+analyze 1:1 physical-scale photovoltaic (PV) solar installations directly on their
+roof or ground in real-time.
+
+The application operates in two seamless modes:
+1. WebXR Augmented Reality Mode (on supported mobile devices with camera pass-through)
+2. Interactive 3D Orbit / Fallback Mode (on desktop browsers and non-XR devices)
+
+
+2. END-TO-END STEP-BY-STEP USER WORKFLOW
+--------------------------------------------------------------------------------
+
+STAGE 1: HARDWARE PROBING & PERMISSION OVERLAY
+- When the application starts, it performs immediate diagnostic checks:
+  * Camera device check (MediaDevices API)
+  * WebXR immersive-ar session support check
+  * Device Orientation & Compass Sensors availability
+  * Location & Solar trajectory calculations
+- An initial Glassmorphism HUD displays two options:
+  [Start AR Session] -> Requests WebXR and hardware camera pass-through.
+  [Continue in Demo Mode (No camera)] -> Launches high-fidelity 3D Orbit mode.
+
+STAGE 2: SURFACE SCANNING & BOUNDARY DETECTION
+- The application enters the scanning state (`enterScanning()`):
+  * A procedural holographic grid expands across the virtual floor/roof plane.
+  * 420 animated floating feature tracking points indicate active spatial mesh.
+  * A central reticle follows the user's camera raycast.
+  * Once the tracking ray maintains stability for >700ms (`state.validT > 0.7s`),
+    the spatial surface locks automatically.
+  * The toast status updates to: "Surface locked — tap button to place."
+  * The primary Floating Action Button (#fab) becomes enabled with an emerald glow.
+
+STAGE 3: ANTIGRAVITY ASSEMBLY & TOUCHDOWN (1:1 SCALE PLACEMENT)
+- When the user taps "#fab", the placement sequence triggers:
+  * The virtual array anchor is locked to the 3D surface coordinates.
+  * Sound Synthesizer plays a kinetic whoosh sound (`playWhoosh()`).
+  * Antigravity Phase: Individual solar cells fly outward in a 3D vortex swarm.
+  * Procedural electric arc beams bridge between adjacent panel contact rails.
+  * Holographic techno rings rotate dynamically around the array footprint.
+  * The array gently descends and lands on the rooftop with a realistic
+    physical squash-and-settle spring animation (`playImpact()`).
+  * The perimeter bounding box computes real-time roof fitment ("✓ Perfect fit").
+
+STAGE 4: INTERACTIVE 3D SCI-FI SYSTEMS (QUICK FX TOOLBAR)
+Once placed, the Advanced FX toolbar appears with 5 cutting-edge toggles:
+
+1. [🔥 IR Thermal Cam] (#thermalModeBtn)
+   - Toggles custom GLSL FLIR Ironbow thermal heatmap shader material.
+   - Calculates real-time cell temperatures based on ambient heat and irradiance.
+   - Visually renders thermal hot-spots, bypass diode gradients, and heat derating.
+   - Button label toggles between "IR Thermal Cam" and "Normal Cam".
+
+2. [💨 Wind Aerodynamics] (#windModeBtn)
+   - Toggles dynamic 3D aerodynamic airflow streamline particles over the panels.
+   - Visualizes air cooling velocity, boundary layer friction, and uplift forces.
+   - Plays aerodynamic ambient sound synthesis (`playWind()`).
+   - Button label toggles between "Wind Aerodynamics" and "Hide Wind".
+
+3. [📊 3D Module HUDs] (#hologramHudBtn)
+   - Projects floating 3D holographic telemetry billboard cards above each module.
+   - Displays real-time per-panel metrics: Instantaneous Watts (e.g. 400W),
+     Operating Voltage (Vmp), Current (Imp), and Cell Temp (°C).
+   - Button label toggles between "3D Module HUDs" and "Hide HUDs".
+
+4. [🌲 Shade Obstacle] (#obstacleBtn)
+   - Places a 3D rooftop obstruction unit (chimney/HVAC/tree) beside the array.
+   - Casts real-time directional PBR shadows directly across solar panel cells.
+   - Real-time derating engine recalculates string clipping and mismatch losses.
+   - Button label toggles between "Shade Obstacle" and "Remove Obstacle".
+
+5. [🎬 Cine Flyover] (#cineTourBtn)
+   - Triggers an automated cinematic 360-degree orbital drone flyover camera.
+   - Plays chime soundscape (`playCineChime()`) and showcases the installation.
+
+STAGE 5: AI SOLAR DECISION ADVISOR (MCDA + XAI)
+- Activated via the top header badge or button (#aiAdvisorBtn):
+  * Evaluates rooftop material albedo (Concrete 0.20, White TPO 0.75, Gravel, Metal).
+  * Runs multi-criteria decision matrix analyzing:
+    Efficiency (30%), Thermal resilience (22%), Bifacial albedo gain (20%),
+    and 25-year reliability (28%).
+  * Recommends the optimal technology (e.g., Advanced TOPCon at 86-98% match).
+  * Provides explainable AI bullet points detailing why the technology was chosen.
+  * "Apply AI Recommendation" automatically switches the 3D model and aligns
+    azimuth orientation to True South for maximum solar harvesting.
+
+STAGE 6: 3D DYNAMIC ARRAY BUILDER & TILT CUSTOMIZER
+- Activated via the [📐 Layout] button (#layoutBtn):
+  * Columns Slider (1 to 6 modules wide): live procedural rebuild of racking.
+  * Rows Slider (1 to 4 rows deep): adjusts total module count in real time.
+  * Tilt Angle Slider (0° to 45°): dynamically tilts panels on ballasted mounts.
+  * Inter-Row Pitch Spacing Slider (1.2m to 3.0m): expands spacing to eliminate
+    winter solstice inter-row shading.
+  * Real-time metrics recalculate instantly: Total Panels, Total Capacity (kWp),
+    Total Footprint Area (m²), and Perimeter Fitment Status ("✓ Safe Fit").
+
+STAGE 7: 25-YEAR SOLAR ROI & BILL SAVINGS SIMULATOR
+- Activated via the [💰 ROI] button (#roiBtn):
+  * Interactive Monthly Power Bill slider ($40 to $600/month).
+  * Computes 25-Year Net Utility Savings with 3.5% annual utility rate escalation.
+  * Computes Payback Period (years to breakeven after federal incentives).
+  * Environmental Impact Calculator: Metric tons of CO2 offset, mature trees
+    planted equivalent, and gasoline vehicle offset equivalents.
+
+STAGE 8: 3D COMPONENT RAYCAST INSPECTOR & EXPLODED VIEW
+- Users can click/tap any part of the 3D solar array:
+  * Three.js Raycaster identifies the exact sub-component clicked (Front Glass,
+    Silicon Wafer, Busbars, EVA encapsulant, Junction Box, Inverter, Aluminum Rail).
+  * Pops up a Glassmorphism technical inspector card detailing specs and warranties.
+  * "Toggle 3D Exploded View" smoothly separates the components into an exploded
+    kinetic stack for engineering education.
+
+STAGE 9: AR SNAPSHOT & CLIENT PROPOSAL EXPORT
+- Activated via the [📸 Snapshot] button (#snapshotBtn):
+  * Captures full-resolution canvas with 3D overlay, statistics, and timestamp.
+  * Generates an instant preview modal with client-ready proposal framing.
+  * One-click download as PNG ("solarfit-rooftop-proposal.png").
+================================================================================

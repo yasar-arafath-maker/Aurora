@@ -1,0 +1,3325 @@
+<!DOCTYPE html>
+<!--
+  SolarFit AR v2.2 — Enhanced Interactive WebXR & Three.js r160 Suite
+  • AI Solar Decision Engine (MCDA + XAI)
+  • Live Dynamic 3D Array Builder (Cols/Rows/Tilt/Pitch)
+  • Interactive 25-Year Solar ROI & Carbon Savings Simulator
+  • 3D Component Raycast Inspector & Exploded View
+  • AR Snapshot & Feasibility Proposal Generator
+  • Procedural Web Audio Sound Engine
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#05080d">
+<title>SolarFit AR v2 — Interactive Solar Simulator</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+<style>
+  html,body{margin:0;height:100%;background:#05080d;overflow:hidden;overscroll-behavior:none;
+    font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
+  body.xr{background:transparent!important}
+  #cam{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;z-index:0}
+  #gl{position:fixed;inset:0;width:100%;height:100%;z-index:1;display:block;touch-action:none}
+  #ui{position:fixed;inset:0;z-index:2;pointer-events:none}
+  #ui .pe{pointer-events:auto}
+  .glass{background:rgba(8,14,22,.76);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,.11)}
+  .glass-card{background:rgba(13,22,35,.88);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border:1px solid rgba(255,255,255,.12)}
+  .no-scroll{scrollbar-width:none}.no-scroll::-webkit-scrollbar{display:none}
+  .chip{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:9999px;padding:3px 10px;color:#cbd5e1}
+  .spinner{width:18px;height:18px;border-radius:50%;border:2.5px solid rgba(34,255,136,.25);border-top-color:#22ff88;animation:spin .8s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  @keyframes fabGlow{0%,100%{box-shadow:0 0 18px 2px rgba(34,255,136,.35),0 10px 26px rgba(0,0,0,.5)}
+                      50%{box-shadow:0 0 42px 12px rgba(34,255,136,.65),0 10px 26px rgba(0,0,0,.5)}}
+  @keyframes slideUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
+  @keyframes badgePop{0%{opacity:0;transform:scale(.55) rotate(-6deg)}60%{transform:scale(1.1) rotate(1.5deg)}100%{opacity:1;transform:none}}
+  @keyframes badgePulse{0%,100%{box-shadow:0 0 0 0 rgba(255,170,0,.55)}50%{box-shadow:0 0 0 9px rgba(255,170,0,0)}}
+  @keyframes warnPulse{0%,100%{opacity:1}50%{opacity:.55}}
+  @keyframes toastIn{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:none}}
+  @keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-7px)}40%{transform:translateX(7px)}60%{transform:translateX(-5px)}80%{transform:translateX(5px)}}
+  .slide-up{animation:slideUp .45s cubic-bezier(.2,.8,.2,1) both}
+  .fab{animation:fabGlow 2.2s ease-in-out infinite}
+  .fab[disabled]{animation:none;opacity:.45;filter:grayscale(.6)}
+  .shake{animation:shake .38s ease}
+  .toast-in{animation:toastIn .35s cubic-bezier(.16,1,.3,1) both}
+  .badge{animation:badgePop .55s cubic-bezier(.2,.9,.3,1.2) both,badgePulse 1.6s ease-in-out .6s infinite}
+  .warn{animation:warnPulse .35s steps(2) infinite}
+  .card{transition:transform .35s cubic-bezier(.2,.8,.2,1),border-color .25s,background .25s,opacity .25s}
+  .card.on{transform:scale(1.04);border-color:rgba(34,255,136,.85);background:rgba(34,255,136,.12)}
+  .card:not(.on){opacity:.72}
+  #sheet{transition:transform .35s cubic-bezier(.16,1,.3,1);will-change:transform}
+</style>
+</head>
+<body>
+<video id="cam" playsinline muted autoplay class="hidden"></video>
+<canvas id="gl"></canvas>
+
+<div id="ui">
+  <!-- gesture capture layer (1-finger drag, 2-finger twist, component tap) -->
+  <div id="gesture" class="absolute inset-0 pe" style="touch-action:none"></div>
+
+  <!-- top bar: Status, AI Advisor, ROI Calc, Snapshot, Sensors, Settings -->
+  <header class="absolute top-0 inset-x-0 p-2.5 sm:p-3 flex items-start justify-between" style="padding-top:max(.65rem,env(safe-area-inset-top))">
+    <div class="glass pe rounded-2xl px-3 py-2 flex items-center gap-2 shadow-lg">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#22ff88" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.6M12 18.9v2.6M2.5 12h2.6M18.9 12h2.6M5.3 5.3l1.9 1.9M16.8 16.8l1.9 1.9M18.7 5.3l-1.9 1.9M7.2 16.8l-1.9 1.9"/></svg>
+      <div>
+        <div class="text-white font-bold text-xs sm:text-sm leading-none tracking-wide flex items-center gap-1.5">
+          <span>SolarFit</span><span class="text-emerald-400">AR v2</span>
+          <span id="sunStatusOrb" class="w-2 h-2 rounded-full bg-emerald-400 inline-block"></span>
+        </div>
+        <div id="modeChip" class="text-[9px] sm:text-[10px] text-slate-400 mt-1">Initialising…</div>
+      </div>
+    </div>
+
+    <!-- action pills -->
+    <div class="flex flex-col items-end gap-1.5">
+      <div class="flex items-center gap-1">
+        <!-- AI Advisor Button -->
+        <button id="aiAdvisorBtn" class="glass pe rounded-full px-2.5 py-1.5 text-xs text-emerald-300 font-semibold border border-emerald-500/40 flex items-center gap-1 active:scale-95 transition-transform shadow-md" title="AI Solar Decision Advisor">
+          <span>🤖</span><span class="hidden sm:inline">AI Advisor</span>
+        </button>
+        <!-- ROI Calculator Button -->
+        <button id="roiBtn" class="glass pe rounded-full px-2.5 py-1.5 text-xs text-amber-300 font-semibold border border-amber-500/40 flex items-center gap-1 active:scale-95 transition-transform shadow-md" title="Solar ROI & Bill Savings Calculator">
+          <span>💰</span><span class="hidden sm:inline">ROI</span>
+        </button>
+        <!-- Layout Customizer Button -->
+        <button id="layoutBtn" class="glass pe rounded-full px-2.5 py-1.5 text-xs text-cyan-300 font-semibold border border-cyan-500/40 flex items-center gap-1 active:scale-95 transition-transform shadow-md" title="Custom Array Layout & Tilt">
+          <span>📐</span><span class="hidden sm:inline">Layout</span>
+        </button>
+        <!-- Snapshot Button -->
+        <button id="snapshotBtn" class="glass pe rounded-full px-2 py-1.5 text-xs text-white font-medium flex items-center gap-1 active:scale-95 transition-transform" title="Take AR Snapshot">
+          <span>📸</span>
+        </button>
+        <!-- Settings Button -->
+        <button id="settingsBtn" class="glass pe rounded-full px-2 py-1.5 text-xs text-white/90 font-medium active:scale-95 transition-transform" title="Settings">
+          ⚙
+        </button>
+        <button id="resetBtn" class="glass pe hidden rounded-full px-2.5 py-1.5 text-xs text-white font-medium active:scale-95 transition-transform">↺ Rescan</button>
+      </div>
+      <button id="roofChip" class="glass pe hidden rounded-full px-3 py-1 text-[11px] text-cyan-300 font-medium"></button>
+    </div>
+  </header>
+
+  <!-- 3D Component Inspector Floating Popup Card (Raycast on tap) -->
+  <div id="inspectorCard" class="pe glass-card hidden absolute left-4 right-4 sm:left-auto sm:right-4 top-20 sm:w-80 rounded-2xl p-3.5 text-white shadow-2xl border border-emerald-400/40 slide-up z-20">
+    <div class="flex items-center justify-between border-b border-white/10 pb-2 mb-2">
+      <div class="flex items-center gap-2">
+        <span id="inspectIcon" class="text-base">🔍</span>
+        <div>
+          <div id="inspectTitle" class="font-bold text-xs text-white">N-Type TOPCon Cell</div>
+          <div id="inspectSub" class="text-[9px] text-emerald-400">16-Busbar Anti-Reflective Glass</div>
+        </div>
+      </div>
+      <button id="closeInspectBtn" class="text-slate-400 hover:text-white text-sm font-bold p-1">✕</button>
+    </div>
+    <p id="inspectDesc" class="text-[11px] text-slate-200 leading-relaxed">Tunnel-oxide passivated contact architecture minimizes electron recombination for 24% conversion efficiency.</p>
+    <div id="inspectMetrics" class="mt-2 grid grid-cols-2 gap-1.5 text-[10px]">
+      <div class="p-1.5 rounded-lg bg-white/5 border border-white/5"><span class="text-slate-400">Temp Coeff:</span> <span class="font-mono text-emerald-300">-0.30%/°C</span></div>
+      <div class="p-1.5 rounded-lg bg-white/5 border border-white/5"><span class="text-slate-400">Warranty:</span> <span class="font-mono text-cyan-300">25 Years (87%)</span></div>
+    </div>
+    <div class="mt-2.5 flex items-center justify-between pt-2 border-t border-white/10 text-[10px]">
+      <button id="explodeViewBtn" class="text-emerald-300 underline font-semibold hover:text-emerald-200">🔍 Toggle 3D Exploded View</button>
+      <span class="text-slate-400">Tap component in 3D</span>
+    </div>
+  </div>
+
+  <!-- fitment status chip -->
+  <div class="absolute inset-x-0 flex justify-center" style="top:calc(max(.75rem,env(safe-area-inset-top)) + 4.2rem)">
+    <div id="fitChip" class="hidden rounded-full px-4 py-1.5 text-xs sm:text-sm font-semibold backdrop-blur-md shadow-lg transition-all duration-300"></div>
+  </div>
+
+  <!-- coach tip -->
+  <div class="absolute inset-x-0 flex justify-center px-4" style="top:calc(max(.75rem,env(safe-area-inset-top)) + 6.8rem)">
+    <div id="coachCard" class="glass pe hidden rounded-2xl px-4 py-2.5 text-xs text-amber-200 border border-amber-500/40 flex items-center gap-2 max-w-sm shadow-xl slide-up">
+      <span>💡 Pan slowly across textured ground or roof boundaries for best surface lock.</span>
+      <button id="coachDismiss" class="ml-auto text-amber-100 font-bold px-1.5 py-0.5 rounded hover:bg-white/10">✕</button>
+    </div>
+  </div>
+
+  <!-- Camera Precision & Best Result Calibration HUD (Center Viewfinder) -->
+  <div id="camGuideHud" class="absolute inset-x-0 flex justify-center px-3 pointer-events-none hidden" style="top:calc(max(.75rem,env(safe-area-inset-top)) + 4.8rem)">
+    <div class="glass pe rounded-2xl p-3 border border-emerald-500/40 shadow-2xl flex flex-col gap-2 max-w-sm w-full text-white backdrop-blur-xl">
+      <div class="flex items-center justify-between border-b border-white/10 pb-1.5">
+        <div class="flex items-center gap-1.5">
+          <span class="w-2 h-2 rounded-full bg-emerald-400 inline-block animate-ping"></span>
+          <span class="text-xs font-bold text-emerald-300">AR Camera Precision Guide</span>
+        </div>
+        <button id="toggleAutoFixBtn" class="text-[10px] px-2.5 py-0.5 rounded-full font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/30 transition-all active:scale-95 shadow">
+          ⚡ Auto-Snap: ON
+        </button>
+      </div>
+
+      <!-- Real-time Camera Metrics -->
+      <div class="grid grid-cols-3 gap-1.5 text-[10px] text-center">
+        <div class="p-1.5 rounded-xl bg-white/5 border border-white/5">
+          <div class="text-slate-400">Tilt Angle</div>
+          <div id="camPitchVal" class="font-mono font-bold text-emerald-300">42° · Ideal</div>
+        </div>
+        <div class="p-1.5 rounded-xl bg-white/5 border border-white/5">
+          <div class="text-slate-400">Distance</div>
+          <div id="camDistVal" class="font-mono font-bold text-cyan-300">2.8m · Optimal</div>
+        </div>
+        <div class="p-1.5 rounded-xl bg-white/5 border border-white/5">
+          <div class="text-slate-400">Sunlight Lux</div>
+          <div id="camLuxVal" class="font-mono font-bold text-amber-300">840 W/m²</div>
+        </div>
+      </div>
+
+      <!-- Alignment Prompt & Instant Snap Action -->
+      <div class="flex items-center justify-between pt-1">
+        <div id="camGuideHint" class="text-[10px] text-slate-300 leading-tight">
+          💡 Aim camera 35°-50° at roof surface
+        </div>
+        <button id="instantSnapBtn" class="px-3.5 py-1 rounded-xl bg-gradient-to-r from-emerald-400 to-teal-400 hover:from-emerald-300 hover:to-teal-300 text-slate-950 font-bold text-xs flex items-center gap-1 shadow-lg shadow-emerald-500/20 active:scale-95 transition-all">
+          ⚡ Instant Snap
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- rotate buttons (desktop / accessibility) -->
+  <div id="rotBtns" class="absolute right-3 top-1/2 -translate-y-1/2 hidden flex-col gap-2">
+    <button id="rotL" class="glass pe w-10 h-10 rounded-full text-white text-lg flex items-center justify-center active:scale-90" aria-label="Rotate left">⟲</button>
+    <button id="rotR" class="glass pe w-10 h-10 rounded-full text-white text-lg flex items-center justify-center active:scale-90" aria-label="Rotate right">⟳</button>
+  </div>
+
+  <!-- snap-to-sun-azimuth hint button -->
+  <div id="snapAzimuthWrap" class="absolute left-3 top-1/2 -translate-y-1/2 hidden flex-col gap-2">
+    <button id="snapAzimuthBtn" class="glass pe rounded-2xl px-3 py-2 text-xs text-emerald-300 border border-emerald-500/40 flex items-center gap-2 shadow-lg active:scale-95 transition-transform" title="Align to optimal solar angle">
+      <span class="text-base">🧭</span>
+      <div class="text-left leading-tight">
+        <div class="font-bold text-[11px]">Align Solar</div>
+        <div id="snapAzimuthSub" class="text-[9px] text-slate-300">Face South</div>
+      </div>
+    </button>
+  </div>
+
+  <!-- bottom stack -->
+  <div class="absolute inset-x-0 bottom-0 flex flex-col items-center gap-2" style="pointer-events:none">
+    <div id="legacyBadge" class="hidden pe rounded-full px-4 py-1.5 text-xs font-bold tracking-wide text-amber-950 bg-amber-400 border border-amber-200 shadow-md">⚠ DISCONTINUED / LEGACY TECH</div>
+
+    <!-- toasts -->
+    <div id="toast" class="glass pe toast-in rounded-full px-4 py-2.5 mb-1 flex items-center gap-3 text-xs sm:text-sm text-white max-w-[92vw] shadow-xl">
+      <div id="toastSpin" class="spinner"></div><span id="toastText">Scanning surface… Move your phone slowly.</span>
+    </div>
+
+    <!-- sunlight match chip -->
+    <div id="sunMatchBar" class="pe hidden mb-1 flex items-center gap-2">
+      <button id="sunMatchBtn" class="glass rounded-full px-3.5 py-1.5 text-xs text-amber-300 font-semibold border border-amber-500/40 flex items-center gap-1.5 shadow-md active:scale-95 transition-all">
+        <span>☀</span><span id="sunMatchText">Match real sunlight</span>
+      </button>
+      <div id="weatherChip" class="glass hidden rounded-full px-3 py-1.5 text-[11px] text-slate-200">
+        <span id="weatherIcon">☀</span> <span id="weatherDesc">Clear Sky</span> · <span id="weatherRad">820 W/m²</span>
+      </div>
+    </div>
+
+    <!-- primary FAB: 1:1 scale placement -->
+    <div class="flex items-center gap-2 mb-[max(1.5rem,env(safe-area-inset-bottom))] pointer-events-auto">
+      <button id="fab" class="fab pe hidden rounded-full px-7 py-4 min-h-[48px] text-base font-bold text-emerald-950 bg-emerald-400 active:scale-95 transition-transform shadow-2xl">
+        ⚡ Instant Fix Solar Array (Tap to Snap)
+      </button>
+      <button id="repositionBtn" class="glass pe hidden rounded-full px-4 py-3.5 text-xs font-semibold text-cyan-300 border border-cyan-500/40 hover:bg-cyan-500/20 active:scale-95 transition-all shadow-xl">
+        📍 Re-position
+      </button>
+    </div>
+
+    <!-- Advanced 3D Interactive FX Bar -->
+    <div id="advancedFxBar" class="hidden flex items-center justify-center gap-2 pointer-events-auto flex-wrap mb-2">
+      <button id="thermalModeBtn" class="glass pe px-3 py-1.5 rounded-full text-xs font-semibold text-rose-300 border-rose-500/30 hover:bg-rose-500/20 active:scale-95 transition flex items-center gap-1.5 shadow-lg shadow-rose-950/40">
+        <span>🔥</span><span id="thermalBtnLabel">IR Thermal Cam</span>
+      </button>
+      <button id="windModeBtn" class="glass pe px-3 py-1.5 rounded-full text-xs font-semibold text-cyan-300 border-cyan-500/30 hover:bg-cyan-500/20 active:scale-95 transition flex items-center gap-1.5 shadow-lg shadow-cyan-950/40">
+        <span>💨</span><span id="windBtnLabel">Wind Aerodynamics</span>
+      </button>
+      <button id="hologramHudBtn" class="glass pe px-3 py-1.5 rounded-full text-xs font-semibold text-amber-300 border-amber-500/30 hover:bg-amber-500/20 active:scale-95 transition flex items-center gap-1.5 shadow-lg shadow-amber-950/40">
+        <span>📊</span><span id="hologramBtnLabel">3D Module HUDs</span>
+      </button>
+      <button id="obstacleBtn" class="glass pe px-3 py-1.5 rounded-full text-xs font-semibold text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/20 active:scale-95 transition flex items-center gap-1.5 shadow-lg shadow-emerald-950/40">
+        <span>🌲</span><span id="obstacleBtnLabel">Shade Obstacle</span>
+      </button>
+      <button id="cineTourBtn" class="glass pe px-3 py-1.5 rounded-full text-xs font-semibold text-violet-300 border-violet-500/30 hover:bg-violet-500/20 active:scale-95 transition flex items-center gap-1.5 shadow-lg shadow-violet-950/40">
+        <span>🎬</span><span>Cine Flyover</span>
+      </button>
+    </div>
+
+    <!-- spring-based bottom sheet -->
+    <section id="sheet" class="pe glass hidden w-full rounded-t-3xl pt-2 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-2xl" style="pointer-events:auto">
+      <div id="sheetHandle" class="cursor-pointer py-1 px-4 flex flex-col items-center">
+        <div class="h-1.5 w-12 rounded-full bg-white/30 hover:bg-white/50 transition-colors"></div>
+        <div class="flex items-center justify-between w-full mt-1 px-2 text-[11px] text-slate-400">
+          <span id="sheetYieldSummary" class="text-emerald-400 font-semibold">4.6 kWp · ~19.2 kWh/day</span>
+          <div class="flex items-center gap-2">
+            <span id="aiSheetBadge" class="chip text-emerald-300 border-emerald-500/40 cursor-pointer text-[10px]">🤖 AI: TOPCon #1</span>
+            <span id="sheetToggleText" class="text-[10px] text-slate-400">Tap to expand ⚙</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- carousel -->
+      <div id="carousel" class="no-scroll flex gap-3 overflow-x-auto snap-x snap-mandatory px-[calc(50%-5.25rem)] py-1.5" style="touch-action:pan-x;-webkit-overflow-scrolling:touch"></div>
+
+      <!-- analytics card -->
+      <div id="diag" class="mx-3 mt-1 rounded-2xl bg-white/5 border border-white/10 p-3">
+        <div class="flex items-center justify-between gap-3">
+          <div class="flex items-center gap-2">
+            <div id="dTitle" class="text-white font-semibold text-[15px]"></div>
+            <span id="aiRankChip" class="chip text-emerald-300 text-[10px] hidden">★ AI Rank #1</span>
+          </div>
+          <div id="dMatch" class="font-extrabold text-xl tabular-nums"></div>
+        </div>
+        <div class="h-1.5 rounded-full bg-white/10 mt-1.5 overflow-hidden">
+          <div id="dBar" class="h-full rounded-full" style="width:0;transition:width .8s cubic-bezier(.2,.8,.2,1),background .4s"></div>
+        </div>
+        <p id="dText" class="text-[12px] leading-snug text-slate-200 mt-2"></p>
+        <div class="flex flex-wrap gap-1.5 mt-2 text-[11px]">
+          <span id="dEff" class="chip"></span>
+          <span id="dKw" class="chip"></span>
+          <span id="dYield" class="chip text-emerald-300 border-emerald-500/40">Est. yield: ~19.2 kWh/d</span>
+          <span id="dSurfaceChip" class="chip cursor-pointer hover:border-emerald-400">Surface: Concrete rooftop ▾</span>
+        </div>
+      </div>
+
+      <!-- expanded controls -->
+      <div id="sheetExpanded" class="hidden mx-3 mt-2 pt-2 border-t border-white/10 flex flex-col gap-2.5">
+        <!-- time-of-day slider -->
+        <div class="rounded-xl bg-black/20 p-2.5 border border-white/5">
+          <div class="flex items-center justify-between text-xs text-slate-200 mb-1">
+            <span class="flex items-center gap-1"><span>🕒</span><span>Sun Simulation Time</span></span>
+            <span id="timeVal" class="font-mono text-emerald-300 font-bold">12:00</span>
+          </div>
+          <input id="timeSlider" type="range" min="6" max="19" step="0.1" value="12" class="w-full accent-emerald-400 cursor-pointer">
+          <div class="flex justify-between text-[10px] text-slate-400 mt-1">
+            <span>06:00 (Dawn)</span>
+            <button id="noonBtn" class="text-emerald-400 underline hover:text-emerald-300 font-medium">Solar Noon</button>
+            <button id="liveTimeBtn" class="text-cyan-400 underline hover:text-cyan-300 font-medium">Real Time</button>
+            <span>19:00 (Dusk)</span>
+          </div>
+        </div>
+
+        <!-- sun & weather quick readout -->
+        <div class="grid grid-cols-2 gap-2 text-[11px]">
+          <div class="rounded-xl bg-black/20 p-2 border border-white/5">
+            <div class="text-slate-400 text-[10px]">Sun Position</div>
+            <div id="sunPosReadout" class="text-white font-mono mt-0.5">Alt: 45° · Az: 180°</div>
+            <div id="sunIncidentAngle" class="text-emerald-400 text-[10px] mt-0.5">Incident: 30°</div>
+          </div>
+          <div class="rounded-xl bg-black/20 p-2 border border-white/5">
+            <div class="text-slate-400 text-[10px]">Solar Irradiance (GHI)</div>
+            <div id="sunIrrReadout" class="text-white font-mono mt-0.5">850 W/m² (DNI)</div>
+            <div id="sunWeatherCond" class="text-cyan-300 text-[10px] mt-0.5">Clear Sky (15% cloud)</div>
+          </div>
+        </div>
+
+        <!-- quick toggles -->
+        <div class="flex items-center justify-between pt-1 text-xs text-slate-300">
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input id="hapticsToggle" type="checkbox" checked class="accent-emerald-400 rounded">
+            <span>Haptics & Audio</span>
+          </label>
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input id="energyBeamsToggle" type="checkbox" checked class="accent-emerald-400 rounded">
+            <span>Energy Flow VFX</span>
+          </label>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- pre-permission start screen -->
+  <div id="start" class="pe absolute inset-0 flex flex-col items-center justify-center text-center px-6" style="background:radial-gradient(120% 90% at 50% 20%,#082424 0%,#04070c 70%)">
+    <div class="w-20 h-20 rounded-3xl flex items-center justify-center mb-4 shadow-2xl" style="background:linear-gradient(135deg,#22ff88,#00c2ff);box-shadow:0 0 50px rgba(34,255,136,.45)">
+      <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="#031f0f" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.6M12 18.9v2.6M2.5 12h2.6M18.9 12h2.6M5.3 5.3l1.9 1.9M16.8 16.8l1.9 1.9M18.7 5.3l-1.9 1.9M7.2 16.8l-1.9 1.9"/></svg>
+    </div>
+    <h1 class="text-white text-3xl font-extrabold tracking-tight">SolarFit <span class="text-emerald-400">AR v2</span></h1>
+    <p class="text-slate-300 text-sm mt-1.5 max-w-xs">Simulate 1:1 scale solar arrays with AI decision optimization & real sunlight.</p>
+
+    <div class="mt-4 w-full max-w-sm rounded-2xl bg-white/5 border border-white/10 p-3 text-left text-xs text-slate-300">
+      <div class="font-semibold text-white text-[13px] flex items-center gap-1.5 mb-1.5">
+        <span>🛡 Privacy & Permissions</span>
+      </div>
+      <ul class="space-y-1.5 text-[11px] leading-relaxed text-slate-300">
+        <li class="flex items-start gap-1.5">
+          <span class="text-emerald-400 font-bold">✓</span>
+          <span><b>Camera:</b> strictly on-device for 1:1 scale AR tracking. Frames never leave your phone.</span>
+        </li>
+        <li class="flex items-start gap-1.5">
+          <span class="text-emerald-400 font-bold">✓</span>
+          <span><b>Sensors:</b> gyro & compass align solar shadows with real physical North.</span>
+        </li>
+        <li class="flex items-start gap-1.5">
+          <span class="text-cyan-300 font-bold">○</span>
+          <span><b>Location:</b> coarse (~1 km) in-memory only for live solar trajectory & weather.</span>
+        </li>
+      </ul>
+    </div>
+
+    <div class="mt-4 flex gap-2 text-[11px]">
+      <span id="stepCam" class="chip">Camera: ready to check</span>
+      <span id="stepXR" class="chip">WebXR: checking…</span>
+    </div>
+    <p id="startMsg" class="text-amber-300 text-xs mt-2 max-w-xs min-h-[1.25rem]"></p>
+
+    <div class="mt-4 flex flex-col gap-2.5 w-full max-w-xs">
+      <button id="startBtn" class="rounded-full py-3.5 font-bold text-emerald-950 bg-emerald-400 min-h-[48px] active:scale-95 transition-transform shadow-xl">
+        Start AR Session
+      </button>
+      <button id="demoBtn" class="rounded-full py-3 font-semibold text-slate-300 glass min-h-[44px] active:scale-95 transition-transform">
+        Continue in Demo Mode (No camera)
+      </button>
+      <button id="retryBtn" class="hidden rounded-full py-3 font-semibold text-white glass min-h-[44px]">
+        Retry Camera Permission
+      </button>
+    </div>
+  </div>
+
+  <!-- AI Solar Decision Advisor Modal (MCDA + XAI Reasoning) -->
+  <div id="aiModal" class="pe absolute inset-0 bg-black/70 backdrop-blur-md hidden flex items-end sm:items-center justify-center p-3 z-30">
+    <div class="glass-card w-full max-w-lg rounded-3xl p-5 text-white max-h-[88vh] overflow-y-auto no-scroll border border-emerald-500/30 shadow-2xl">
+      <div class="flex items-center justify-between border-b border-white/10 pb-3">
+        <div class="flex items-center gap-2">
+          <div class="w-7 h-7 rounded-lg bg-emerald-500/20 border border-emerald-400/40 flex items-center justify-center text-sm">🤖</div>
+          <div>
+            <h2 class="font-bold text-sm sm:text-base leading-tight">AI Solar Decision Advisor</h2>
+            <div class="text-[10px] text-emerald-400">Multi-Criteria Physics & Environmental Optimization</div>
+          </div>
+        </div>
+        <button id="closeAiModalBtn" class="text-slate-400 hover:text-white text-lg font-bold p-1">✕</button>
+      </div>
+
+      <div class="mt-3 p-2.5 rounded-2xl bg-white/5 border border-white/10">
+        <div class="text-[11px] text-slate-300 font-semibold mb-1.5 flex items-center justify-between">
+          <span>Rooftop Surface Material</span>
+          <span id="aiAlbedoReadout" class="text-cyan-300 font-mono text-[10px]">Albedo: 0.20 (Grey Concrete)</span>
+        </div>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-[11px]">
+          <button data-surf="concrete" class="surf-btn px-2 py-1.5 rounded-xl border border-emerald-400 bg-emerald-500/20 text-white font-medium">Concrete</button>
+          <button data-surf="white_membrane" class="surf-btn px-2 py-1.5 rounded-xl border border-white/10 bg-white/5 text-slate-300 hover:border-white/30">White TPO</button>
+          <button data-surf="gravel" class="surf-btn px-2 py-1.5 rounded-xl border border-white/10 bg-white/5 text-slate-300 hover:border-white/30">Gravel</button>
+          <button data-surf="metal_zinc" class="surf-btn px-2 py-1.5 rounded-xl border border-white/10 bg-white/5 text-slate-300 hover:border-white/30">Metal Roof</button>
+        </div>
+      </div>
+
+      <div class="mt-3 p-3.5 rounded-2xl bg-gradient-to-r from-emerald-950/60 to-cyan-950/60 border border-emerald-500/40">
+        <div class="flex items-center justify-between">
+          <div>
+            <div class="text-[10px] text-emerald-400 uppercase font-bold tracking-wider">Top Recommended Technology</div>
+            <div id="aiTopName" class="text-base font-extrabold text-white mt-0.5">Advanced TOPCon</div>
+          </div>
+          <div id="aiTopScore" class="text-2xl font-black text-emerald-400 tabular-nums">98%</div>
+        </div>
+        <div id="aiTopReasons" class="mt-2 text-[11px] leading-relaxed text-slate-200 space-y-1"></div>
+      </div>
+
+      <div class="mt-3">
+        <div class="text-[11px] text-slate-400 font-semibold uppercase tracking-wider mb-2">Technology Decision Matrix Rankings</div>
+        <div id="aiRankingsList" class="space-y-2 text-xs"></div>
+      </div>
+
+      <div class="mt-4 pt-3 border-t border-white/10 flex gap-2">
+        <button id="aiApplyBtn" class="w-full py-3 rounded-full font-bold text-emerald-950 bg-emerald-400 active:scale-95 transition-transform shadow-lg text-xs sm:text-sm">
+          ⚡ Apply AI Recommendation & Align
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Dynamic 3D Array Layout Builder Modal -->
+  <div id="layoutModal" class="pe absolute inset-0 bg-black/70 backdrop-blur-md hidden flex items-end sm:items-center justify-center p-3 z-30">
+    <div class="glass-card w-full max-w-md rounded-3xl p-5 text-white max-h-[85vh] overflow-y-auto no-scroll border border-cyan-500/30 shadow-2xl">
+      <div class="flex items-center justify-between border-b border-white/10 pb-3">
+        <div class="flex items-center gap-2">
+          <span class="text-lg">📐</span>
+          <h2 class="font-bold text-sm sm:text-base">Custom Array & Tilt Builder</h2>
+        </div>
+        <button id="closeLayoutBtn" class="text-slate-400 hover:text-white text-lg font-bold p-1">✕</button>
+      </div>
+
+      <div class="mt-3 space-y-3.5 text-xs">
+        <div>
+          <div class="flex justify-between mb-1 text-slate-300">
+            <span>Columns (Modules Wide):</span>
+            <span id="colVal" class="font-mono text-cyan-300 font-bold">3 Cols</span>
+          </div>
+          <input id="colSlider" type="range" min="1" max="6" step="1" value="3" class="w-full accent-cyan-400">
+        </div>
+
+        <div>
+          <div class="flex justify-between mb-1 text-slate-300">
+            <span>Rows (Modules Deep):</span>
+            <span id="rowVal" class="font-mono text-cyan-300 font-bold">2 Rows</span>
+          </div>
+          <input id="rowSlider" type="range" min="1" max="4" step="1" value="2" class="w-full accent-cyan-400">
+        </div>
+
+        <div>
+          <div class="flex justify-between mb-1 text-slate-300">
+            <span>Panel Tilt Angle:</span>
+            <span id="tiltVal" class="font-mono text-emerald-300 font-bold">15° (Optimal)</span>
+          </div>
+          <input id="tiltSlider" type="range" min="0" max="45" step="1" value="15" class="w-full accent-emerald-400">
+        </div>
+
+        <div>
+          <div class="flex justify-between mb-1 text-slate-300">
+            <span>Inter-Row Pitch Spacing:</span>
+            <span id="pitchVal" class="font-mono text-cyan-300 font-bold">1.85 m</span>
+          </div>
+          <input id="pitchSlider" type="range" min="1.2" max="3.0" step="0.05" value="1.85" class="w-full accent-cyan-400">
+        </div>
+
+        <div class="p-3 rounded-2xl bg-white/5 border border-white/10 text-[11px] grid grid-cols-2 gap-2">
+          <div><span class="text-slate-400">Total Panels:</span> <span id="builderTotalPanels" class="text-white font-bold">6 Modules</span></div>
+          <div><span class="text-slate-400">Total Capacity:</span> <span id="builderTotalKw" class="text-emerald-400 font-bold">4.6 kWp</span></div>
+          <div><span class="text-slate-400">Footprint Area:</span> <span id="builderTotalArea" class="text-cyan-300 font-bold">11.7 m²</span></div>
+          <div><span class="text-slate-400">Roof Fitment:</span> <span id="builderFitStatus" class="text-emerald-300 font-bold">✓ Safe Fit</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 25-Year Solar ROI & Bill Savings Simulator Modal -->
+  <div id="roiModal" class="pe absolute inset-0 bg-black/70 backdrop-blur-md hidden flex items-end sm:items-center justify-center p-3 z-30">
+    <div class="glass-card w-full max-w-lg rounded-3xl p-5 text-white max-h-[88vh] overflow-y-auto no-scroll border border-amber-500/30 shadow-2xl">
+      <div class="flex items-center justify-between border-b border-white/10 pb-3">
+        <div class="flex items-center gap-2">
+          <span class="text-xl">💰</span>
+          <div>
+            <h2 class="font-bold text-sm sm:text-base leading-tight">25-Year Solar ROI & Savings Simulator</h2>
+            <div class="text-[10px] text-amber-300">Financial Returns & Carbon Offset Estimation</div>
+          </div>
+        </div>
+        <button id="closeRoiBtn" class="text-slate-400 hover:text-white text-lg font-bold p-1">✕</button>
+      </div>
+
+      <div class="mt-3 space-y-3.5 text-xs">
+        <div>
+          <div class="flex justify-between mb-1 text-slate-300">
+            <span>Average Monthly Power Bill:</span>
+            <span id="roiBillVal" class="font-mono text-emerald-400 font-bold">$180 / mo</span>
+          </div>
+          <input id="roiBillSlider" type="range" min="40" max="600" step="10" value="180" class="w-full accent-emerald-400">
+        </div>
+
+        <div class="grid grid-cols-3 gap-2 text-center text-[11px]">
+          <div class="p-2.5 rounded-2xl bg-emerald-950/40 border border-emerald-500/30">
+            <div class="text-slate-400 text-[9px] uppercase">25-Yr Net Savings</div>
+            <div id="roiTotalSavings" class="text-base font-extrabold text-emerald-400 mt-1">$48,200</div>
+          </div>
+          <div class="p-2.5 rounded-2xl bg-amber-950/40 border border-amber-500/30">
+            <div class="text-slate-400 text-[9px] uppercase">Payback Period</div>
+            <div id="roiPayback" class="text-base font-extrabold text-amber-300 mt-1">4.2 Years</div>
+          </div>
+          <div class="p-2.5 rounded-2xl bg-cyan-950/40 border border-cyan-500/30">
+            <div class="text-slate-400 text-[9px] uppercase">CO₂ Prevented</div>
+            <div id="roiCarbon" class="text-base font-extrabold text-cyan-300 mt-1">112 Tons</div>
+          </div>
+        </div>
+
+        <div class="p-3 rounded-2xl bg-white/5 border border-white/10 text-[11px] leading-relaxed text-slate-300">
+          🌱 <b>Environmental Impact:</b> Offsets equivalent to planting <span id="roiTrees" class="text-emerald-300 font-bold">1,860 mature trees</span> and taking 24 gasoline cars off the road for 25 years.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- AR Snapshot Preview & Share Modal -->
+  <div id="snapshotModal" class="pe absolute inset-0 bg-black/80 backdrop-blur-md hidden flex items-center justify-center p-3 z-40">
+    <div class="glass-card w-full max-w-md rounded-3xl p-4 text-white border border-white/20 shadow-2xl">
+      <div class="flex items-center justify-between pb-2 mb-2 border-b border-white/10">
+        <h3 class="font-bold text-sm flex items-center gap-1.5"><span>📸</span><span>Solar Proposal Snapshot</span></h3>
+        <button id="closeSnapshotBtn" class="text-slate-400 hover:text-white font-bold p-1">✕</button>
+      </div>
+      <img id="snapshotImg" class="w-full rounded-2xl border border-white/15 object-cover" alt="AR Rooftop Proposal">
+      <div class="mt-3 flex gap-2">
+        <a id="downloadSnapshotBtn" download="solarfit-rooftop-proposal.png" class="flex-1 py-2.5 rounded-full text-center font-bold text-emerald-950 bg-emerald-400 active:scale-95 text-xs shadow-lg">
+          ⬇ Save Image
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <!-- sensors & diagnostics modal -->
+  <div id="sensorsModal" class="pe absolute inset-0 bg-black/60 backdrop-blur-md hidden flex items-end sm:items-center justify-center p-3 z-30">
+    <div class="glass-card w-full max-w-md rounded-3xl p-5 text-white max-h-[85vh] overflow-y-auto no-scroll border border-white/20 shadow-2xl">
+      <div class="flex items-center justify-between border-b border-white/10 pb-3">
+        <h2 class="font-bold text-base flex items-center gap-2">
+          <span>📡 Sensor & Hardware Matrix</span>
+        </h2>
+        <button id="closeSensorsBtn" class="text-slate-400 hover:text-white text-lg font-bold p-1">✕</button>
+      </div>
+
+      <div class="mt-3 space-y-2 text-xs">
+        <div class="p-2.5 rounded-xl bg-white/5 border border-white/5 flex items-center justify-between">
+          <span>Camera Path</span>
+          <span id="sensorCam" class="font-mono text-emerald-400">WebXR Immersive</span>
+        </div>
+        <div class="p-2.5 rounded-xl bg-white/5 border border-white/5 flex items-center justify-between">
+          <span>Pose / Tracking</span>
+          <span id="sensorPose" class="font-mono text-emerald-400">WebXR 6-DoF</span>
+        </div>
+        <div class="p-2.5 rounded-xl bg-white/5 border border-white/5 flex items-center justify-between">
+          <span>True North Heading</span>
+          <span id="sensorHeading" class="font-mono text-emerald-400">Device Compass</span>
+        </div>
+        <div class="p-2.5 rounded-xl bg-white/5 border border-white/5 flex items-center justify-between">
+          <span>Surface Detection</span>
+          <span id="sensorSurface" class="font-mono text-emerald-400">Hit-Test + Planes</span>
+        </div>
+        <div class="p-2.5 rounded-xl bg-white/5 border border-white/5 flex items-center justify-between">
+          <span>Real-Light Estimation</span>
+          <span id="sensorLight" class="font-mono text-emerald-400">LightProbe / Luma 16×16</span>
+        </div>
+        <div class="p-2.5 rounded-xl bg-white/5 border border-white/5 flex items-center justify-between">
+          <span>Coarse Location</span>
+          <span id="sensorLocation" class="font-mono text-amber-300">Timezone Estimate (~37°N)</span>
+        </div>
+        <div class="p-2.5 rounded-xl bg-white/5 border border-white/5 flex items-center justify-between">
+          <span>Weather / Irradiance</span>
+          <span id="sensorWeather" class="font-mono text-emerald-400">Open-Meteo API</span>
+        </div>
+        <div class="p-2.5 rounded-xl bg-white/5 border border-white/5 flex items-center justify-between">
+          <span>Thermal & Performance</span>
+          <span id="sensorPerf" class="font-mono text-cyan-300">60 FPS · DPR 2.0</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { AISolarDecisionEngine } from './ai-solar-engine.js';
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   0. CONFIG & AI DECISION ENGINE INITIALIZATION
+   ═══════════════════════════════════════════════════════════════════════════ */
+const CFG = {
+  SURFACE: 'concrete',
+  PANEL: { w: 1.13, l: 1.72, t: 0.035 },
+  COLS: 3, ROWS: 2,
+  COL_PITCH: 1.15, ROW_PITCH: 1.85,
+  TILT: THREE.MathUtils.degToRad(15),
+  PANEL_YC: 0.5,
+  FOOT: { hx: 2.4, hz: 1.85 },
+  ROOF_DEFAULT: { w: 7.0, d: 5.5 },
+  HOVER: 0.3, REVEAL_T: 3.4, HOLD_T: 0.35, DROP_T: 0.42, SETTLE_T: 1.15,
+  BIFACIAL_LIFT: 0.45,
+  FIELD_R: 3.15,
+  WEATHER_TIMEOUT: 4000,
+  WEATHER_CACHE_MS: 10 * 60 * 1000,
+  COARSE_LAT: 37.77, COARSE_LON: -122.42,
+  HAPTICS_ENABLED: true,
+  ENERGY_BEAMS_ENABLED: true
+};
+const PANEL_AREA = CFG.PANEL.w * CFG.PANEL.l;
+const aiSolarEngine = new AISolarDecisionEngine();
+
+/* Global App State */
+const state = {
+  mode:'idle', placed:false, validT:0, surfaceOk:false, typeIndex:0,
+  collide:false, floorY:0, yaw:0, coachDismissed:false, scanDuration:0, exploded:false,
+  thermalMode: false, windMode: false, hologramHud: false, obstacleActive: false,
+  isDraggingSun: false, cineTourActive: false, cineTourT: 0,
+  autoFix: true, camPitch: 42, camDist: 2.8, camLux: 840
+};
+window.state = state;
+window.CFG = CFG;
+const TL = { phase:'none', t:0, R:0, lift:0, squash:0 };
+let rackLift = 0;
+const reticlePos = new THREE.Vector3(); let reticleValid = false;
+let roofPoly = []; let roofSource = 'virtual'; let detectedPlanes = [];
+let roofLine = null;
+let hitTestSource = null, hitTestRequested = false, planeTick = 0;
+let stream = null;
+let toastTimeout = null;
+let latestAiEvaluation = null;
+
+/* Procedural Web Audio Sound Synthesizer */
+class ProceduralAudio {
+  constructor() {
+    this.ctx = null;
+  }
+  init() {
+    if (!this.ctx) {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (AudioCtx) this.ctx = new AudioCtx();
+    }
+  }
+  playClick() {
+    if (!CFG.HAPTICS_ENABLED || !this.ctx) return;
+    try {
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(880, this.ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(440, this.ctx.currentTime + 0.04);
+      gain.gain.setValueAtTime(0.12, this.ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.04);
+      osc.connect(gain); gain.connect(this.ctx.destination);
+      osc.start(); osc.stop(this.ctx.currentTime + 0.04);
+    } catch {}
+  }
+  playImpact() {
+    if (!CFG.HAPTICS_ENABLED || !this.ctx) return;
+    try {
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(140, this.ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(40, this.ctx.currentTime + 0.3);
+      gain.gain.setValueAtTime(0.28, this.ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.3);
+      osc.connect(gain); gain.connect(this.ctx.destination);
+      osc.start(); osc.stop(this.ctx.currentTime + 0.3);
+    } catch {}
+  }
+  playWhoosh() {
+    if (!CFG.HAPTICS_ENABLED || !this.ctx) return;
+    try {
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(300, this.ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(80, this.ctx.currentTime + 0.5);
+      gain.gain.setValueAtTime(0.2, this.ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.5);
+      osc.connect(gain); gain.connect(this.ctx.destination);
+      osc.start(); osc.stop(this.ctx.currentTime + 0.5);
+    } catch {}
+  }
+  playArc() {
+    if (!CFG.HAPTICS_ENABLED || !this.ctx) return;
+    try {
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(1200 + Math.random()*800, this.ctx.currentTime);
+      gain.gain.setValueAtTime(0.04, this.ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.05);
+      osc.connect(gain); gain.connect(this.ctx.destination);
+      osc.start(); osc.stop(this.ctx.currentTime + 0.05);
+    } catch {}
+  }
+  playThermal() {
+    if (!CFG.HAPTICS_ENABLED || !this.ctx) return;
+    try {
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(520, this.ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(1040, this.ctx.currentTime + 0.15);
+      gain.gain.setValueAtTime(0.15, this.ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.15);
+      osc.connect(gain); gain.connect(this.ctx.destination);
+      osc.start(); osc.stop(this.ctx.currentTime + 0.15);
+    } catch {}
+  }
+  playWind() {
+    if (!CFG.HAPTICS_ENABLED || !this.ctx) return;
+    try {
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(220, this.ctx.currentTime);
+      osc.frequency.linearRampToValueAtTime(440, this.ctx.currentTime + 0.2);
+      gain.gain.setValueAtTime(0.12, this.ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.25);
+      osc.connect(gain); gain.connect(this.ctx.destination);
+      osc.start(); osc.stop(this.ctx.currentTime + 0.25);
+    } catch {}
+  }
+  playCineChime() {
+    if (!CFG.HAPTICS_ENABLED || !this.ctx) return;
+    try {
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(659.25, this.ctx.currentTime);
+      gain.gain.setValueAtTime(0.2, this.ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.6);
+      osc.connect(gain); gain.connect(this.ctx.destination);
+      osc.start(); osc.stop(this.ctx.currentTime + 0.6);
+    } catch {}
+  }
+  playSnap() {
+    if (!CFG.HAPTICS_ENABLED || !this.ctx) return;
+    try {
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(800, this.ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(150, this.ctx.currentTime + 0.05);
+      gain.gain.setValueAtTime(0.18, this.ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.05);
+      osc.connect(gain); gain.connect(this.ctx.destination);
+      osc.start(); osc.stop(this.ctx.currentTime + 0.05);
+    } catch {}
+  }
+}
+const sfx = new ProceduralAudio();
+
+/* Panel catalogue */
+const TYPES = [
+  { id:'mono',  tex:'mono',  name:'Monocrystalline', tag:'Single-crystal silicon', eff:21, match:98,
+    text:'98% Match. Highly Suitable. Maximizes energy production in compact rooftop areas.',
+    look:{rough:.06,metal:.10,clear:1.0,clearR:.03,env:1.9,opacity:1,shimmer:0,rear:0,lift:0},
+    sw:'linear-gradient(135deg,#020305 0%,#161b26 48%,#030406 100%)' },
+  { id:'poly',  tex:'poly',  name:'Polycrystalline', tag:'Multi-crystal, legacy',  eff:16, match:50, legacy:true,
+    text:'50% Match. Phased out tech. Not recommended for modern installations.',
+    look:{rough:.34,metal:.55,clear:.30,clearR:.30,env:1.2,opacity:1,shimmer:0,rear:0,lift:0},
+    sw:'repeating-conic-gradient(from 20deg at 30% 40%,#1245b0 0 12deg,#0b2d82 12deg 26deg,#2a63d6 26deg 31deg,#081f5c 31deg 48deg)' },
+  { id:'thin',  tex:'thin',  name:'Thin-Film', tag:'Flexible, matte',            eff:11.5, match:62,
+    text:'62% Match. Flexible and lightweight, but low efficiency means you need more roof area for the same output.',
+    look:{rough:.88,metal:0,clear:0,clearR:.5,env:.22,opacity:1,shimmer:0,rear:0,lift:0},
+    sw:'linear-gradient(135deg,#17171b,#09090b)' },
+  { id:'perc',  tex:'perc',  name:'Advanced Mono PERC', tag:'Passivated rear cell', eff:22.5, match:98,
+    text:'98% Match. Highly Suitable. Maximizes energy production in compact rooftop areas.',
+    look:{rough:.12,metal:.15,clear:.85,clearR:.05,env:1.4,opacity:1,shimmer:1,rear:0,lift:0},
+    sw:'linear-gradient(135deg,#050a18,#17306a 45%,#04080f 70%,#2a62ff 100%)' },
+  { id:'topcon',tex:'topcon',name:'Advanced TOPCon', tag:'Tunnel-oxide passivated', eff:24, match:98,
+    text:'98% Match. Highly Suitable. Maximizes energy production in compact rooftop areas.',
+    look:{rough:.03,metal:.10,clear:1.0,clearR:.01,env:2.4,opacity:1,shimmer:0,rear:0,lift:0},
+    sw:'radial-gradient(circle at 30% 25%,#2a2f3a 0,#05060a 28%,#000 100%)' },
+  { id:'bifi',  tex:'bifacial',name:'Bifacial', tag:'Glass-glass, two-sided',    eff:22, match:35,
+    text:'35% Match. Limited Back-side Gain. Bifacial requires highly reflective light surfaces; current grey concrete delivers poor rear yield.',
+    look:{rough:.05,metal:.05,clear:1.0,clearR:.02,env:1.5,opacity:.36,shimmer:0,rear:1,lift:CFG.BIFACIAL_LIFT},
+    sw:'linear-gradient(135deg,rgba(120,190,230,.35),rgba(10,25,50,.7)),repeating-linear-gradient(90deg,transparent 0 9px,rgba(255,255,255,.5) 9px 10px)' }
+];
+const LOOK_KEYS = ['rough','metal','clear','clearR','env','opacity','shimmer','rear','lift'];
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   1. UTILITIES & ANIMATION ORCHESTRATOR
+   ═══════════════════════════════════════════════════════════════════════════ */
+const $ = (s) => document.querySelector(s);
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const smooth = (x) => x * x * (3 - 2 * x);
+const easeInOutCubic = (t) => t < .5 ? 4*t*t*t : 1 - Math.pow(-2*t + 2, 3) / 2;
+const easeOutElastic = (t) => t === 0 ? 0 : t === 1 ? 1 : Math.pow(2, -10*t) * Math.sin((t*10 - .75) * (2*Math.PI) / 3) + 1;
+const damp = (a, b, k, dt) => a + (b - a) * (1 - Math.exp(-k * dt));
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+function pointInPoly(x, z, poly){
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const a = poly[i], b = poly[j];
+    if (((a.y > z) !== (b.y > z)) && (x < (b.x - a.x) * (z - a.y) / (b.y - a.y) + a.x)) inside = !inside;
+  }
+  return inside;
+}
+const polyArea = (p) => { let s = 0; for (let i=0,j=p.length-1;i<p.length;j=i++) s += (p[j].x*p[i].y - p[i].x*p[j].y); return Math.abs(s)/2; };
+
+let lastHaptic = 0;
+function triggerHaptic(pattern = 30){
+  sfx.playClick();
+  if (!CFG.HAPTICS_ENABLED || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const now = performance.now();
+  if (now - lastHaptic < 1500) return;
+  lastHaptic = now;
+  try { if (navigator.vibrate) navigator.vibrate(pattern); } catch {}
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   2. RENDERER, SCENE & PERFORMANCE ADAPTER
+   ═══════════════════════════════════════════════════════════════════════════ */
+const canvas = $('#gl');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: 'high-performance', preserveDrawingBuffer: true });
+let currentDpr = Math.min(devicePixelRatio, 2);
+renderer.setPixelRatio(currentDpr);
+renderer.setSize(innerWidth, innerHeight);
+renderer.setClearColor(0x000000, 0);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.xr.enabled = true;
+renderer.xr.setReferenceSpaceType('local');
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.05, 100);
+camera.position.set(0, 1.6, 0);
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const hemiLight = new THREE.HemisphereLight(0xffffff, 0x8b9099, 0.55);
+scene.add(hemiLight);
+
+const TIME = { value: 0 };
+const WEATHER_STATE = { wetness: { value: 0 }, rainIntensity: { value: 0 } };
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   3. PROCEDURAL PANEL TEXTURES
+   ═══════════════════════════════════════════════════════════════════════════ */
+function chamferPath(g, x, y, w, h, c){
+  g.beginPath(); g.moveTo(x+c,y); g.lineTo(x+w-c,y); g.lineTo(x+w,y+c); g.lineTo(x+w,y+h-c);
+  g.lineTo(x+w-c,y+h); g.lineTo(x+c,y+h); g.lineTo(x,y+h-c); g.lineTo(x,y+c); g.closePath();
+}
+function toTex(c){ const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; return t; }
+
+function makePanelTexture(kind){
+  const W = 512, H = 780, cols = 6, rows = 10, cw = W/cols, ch = H/rows, gap = 5;
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  const rnd = mulberry32(kind.charCodeAt(0) * 131 + kind.length * 7);
+  const bg = { mono:'#010203', poly:'#06122b', thin:'#060607', perc:'#02040a', topcon:'#000001', bifacial:null }[kind];
+  if (bg) { g.fillStyle = bg; g.fillRect(0,0,W,H); } else g.clearRect(0,0,W,H);
+
+  if (kind === 'thin') {
+    const gr = g.createLinearGradient(0,0,W,H); gr.addColorStop(0,'#16161a'); gr.addColorStop(1,'#09090b');
+    g.fillStyle = gr; g.fillRect(12,12,W-24,H-24);
+    g.strokeStyle = 'rgba(255,255,255,0.07)'; g.lineWidth = 1;
+    for (let x = 22; x < W-12; x += 11) { g.beginPath(); g.moveTo(x,12); g.lineTo(x,H-12); g.stroke(); }
+    return toTex(c);
+  }
+  for (let r = 0; r < rows; r++) for (let q = 0; q < cols; q++) {
+    const x = q*cw + gap/2, y = r*ch + gap/2, w = cw - gap, h = ch - gap;
+    chamferPath(g, x, y, w, h, kind === 'poly' ? 0.5 : 9);
+    const gr = g.createLinearGradient(x, y, x+w, y+h);
+    let bb = 5, bbCol = 'rgba(160,175,200,0.22)';
+    if (kind === 'mono')     { gr.addColorStop(0,'#0b0e16'); gr.addColorStop(1,'#04060a'); }
+    if (kind === 'perc')     { gr.addColorStop(0,'#0c1530'); gr.addColorStop(1,'#050a18'); bbCol = 'rgba(190,205,235,0.28)'; }
+    if (kind === 'topcon')   { gr.addColorStop(0,'#06080e'); gr.addColorStop(1,'#010204'); bb = 16; bbCol = 'rgba(170,185,210,0.10)'; }
+    if (kind === 'poly')     { gr.addColorStop(0,'#1344b4'); gr.addColorStop(1,'#0a2a78'); bb = 3; bbCol = 'rgba(215,225,245,0.62)'; }
+    if (kind === 'bifacial') { gr.addColorStop(0,'rgba(10,24,48,.42)'); gr.addColorStop(1,'rgba(4,10,22,.30)'); bbCol = 'rgba(230,240,250,0.55)'; }
+    g.fillStyle = gr; g.fill();
+
+    if (kind === 'poly') {
+      g.save(); chamferPath(g, x, y, w, h, 0.5); g.clip();
+      const pal = ['#2a63d6','#0f3a9a','#081f5c','#3b78ee','#16409e','#0b2f86','#5b95ff'];
+      for (let i = 0; i < 30; i++) {
+        const cx = x + rnd()*w, cy = y + rnd()*h, s = 8 + rnd()*26;
+        g.beginPath(); g.moveTo(cx, cy);
+        g.lineTo(cx + (rnd()-.5)*s*2, cy + (rnd()-.5)*s*2); g.lineTo(cx + (rnd()-.5)*s*2, cy + (rnd()-.5)*s*2); g.closePath();
+        g.globalAlpha = .35 + rnd()*.5; g.fillStyle = pal[(rnd()*pal.length)|0]; g.fill();
+      }
+      g.restore(); g.globalAlpha = 1;
+    }
+    if (kind === 'bifacial') { chamferPath(g, x, y, w, h, 9); g.strokeStyle = 'rgba(210,225,240,0.7)'; g.lineWidth = 1.6; g.stroke(); }
+
+    g.strokeStyle = bbCol; g.lineWidth = kind === 'poly' ? 2.2 : (kind === 'topcon' ? .7 : 1.2);
+    for (let k = 1; k <= bb; k++) { const xx = x + w*k/(bb+1); g.beginPath(); g.moveTo(xx, y+2); g.lineTo(xx, y+h-2); g.stroke(); }
+    if (kind === 'mono' || kind === 'perc') {
+      g.strokeStyle = 'rgba(120,140,170,0.05)'; g.lineWidth = 1;
+      for (let yy = y+3; yy < y+h; yy += 5) { g.beginPath(); g.moveTo(x+2,yy); g.lineTo(x+w-2,yy); g.stroke(); }
+    }
+    if (kind === 'perc') { g.strokeStyle = 'rgba(0,0,0,.7)'; g.lineWidth = 2; g.beginPath(); g.moveTo(x+4, y+h/2); g.lineTo(x+w-4, y+h/2); g.stroke(); }
+    if (kind === 'topcon') {
+      g.fillStyle = 'rgba(220,235,255,0.55)';
+      for (let i = 0; i < 3; i++) { g.beginPath(); g.arc(x + w*(.2+.3*i), y + h*(.35+.3*(i%2)), 1.1, 0, 7); g.fill(); }
+    }
+  }
+  return toTex(c);
+}
+function makeRearTexture(){
+  const W = 512, H = 780, c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d');
+  const cols = 6, rows = 10, cw = W/cols, ch = H/rows;
+  for (let r = 0; r < rows; r++) for (let q = 0; q < cols; q++) {
+    const x = q*cw + 3, y = r*ch + 3, w = cw - 6, h = ch - 6;
+    chamferPath(g, x, y, w, h, 9); g.fillStyle = 'rgba(26,36,52,0.85)'; g.fill();
+    g.strokeStyle = 'rgba(238,243,252,0.95)'; g.lineWidth = 2.2;
+    for (let k = 1; k <= 5; k++) { const xx = x + w*k/6; g.beginPath(); g.moveTo(xx,y+2); g.lineTo(xx,y+h-2); g.stroke(); }
+    g.strokeStyle = 'rgba(225,232,242,0.5)'; g.lineWidth = 1;
+    for (let yy = y+4; yy < y+h-2; yy += 6) { g.beginPath(); g.moveTo(x+2,yy); g.lineTo(x+w-2,yy); g.stroke(); }
+  }
+  return toTex(c);
+}
+const TEX = {}; TYPES.forEach(t => { TEX[t.tex] = TEX[t.tex] || makePanelTexture(t.tex); });
+const REAR_TEX = makeRearTexture();
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   4. SHADER PATCH: ASSEMBLY WAVE, TEXTURE FADE & WET GLASS
+   ═══════════════════════════════════════════════════════════════════════════ */
+const revealables = [];
+function patch(mat, delay = 0, span = 0.32){
+  const u = {
+    uReveal:{value:0}, uMix:{value:0}, uMapB:{value:null}, uShimmer:{value:0},
+    uTime:TIME, uWet:WEATHER_STATE.wetness, uRain:WEATHER_STATE.rainIntensity
+  };
+  mat.userData.u = u; mat.userData.delay = delay; mat.userData.span = span;
+  mat.onBeforeCompile = (sh) => {
+    Object.assign(sh.uniforms, u);
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', `#include <common>
+        uniform float uReveal; uniform float uTime; varying float vRev; varying vec3 vWorldP;`)
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+        float sd = fract(sin(dot(position.xz*13.1 + position.y*7.7, vec2(12.9898,78.233)))*43758.5453);
+        float wv = sin(position.x*5.0 + position.z*3.0 + uTime*4.0)*0.5 + 0.5;
+        float rr = clamp(uReveal*1.45 - sd*0.45, 0.0, 1.0);
+        vRev = uReveal;
+        transformed = position*mix(0.15, 1.0, rr)
+                    + objectNormal*(1.0-rr)*(0.25 + wv*0.45)
+                    + vec3(0.0, (1.0-rr)*0.5*wv, 0.0);
+        vWorldP = (modelMatrix * vec4(transformed, 1.0)).xyz;`);
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', `#include <common>
+        uniform float uReveal; uniform float uTime; uniform float uMix; uniform float uShimmer;
+        uniform float uWet; uniform float uRain; uniform sampler2D uMapB;
+        varying float vRev; varying vec3 vWorldP;`)
+      .replace('#include <map_fragment>', `
+        if (vRev < 0.02) discard;
+        #ifdef USE_MAP
+          vec4 sdA = mix(texture2D(map, vMapUv), texture2D(uMapB, vMapUv), uMix);
+          sdA.rgb = mix(sdA.rgb, sdA.rgb * 0.72, uWet * 0.5);
+          diffuseColor *= sdA;
+        #endif`)
+      .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+        #ifdef USE_MAP
+          float shn = smoothstep(0.88, 1.0, sin((vMapUv.x*1.2 + vMapUv.y)*7.0 - uTime*1.4));
+          totalEmissiveRadiance += vec3(0.08,0.32,1.0)*shn*uShimmer*0.9 + vec3(0.02,0.07,0.2)*uShimmer*0.5;
+        #endif`)
+      .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
+        roughnessFactor = mix(roughnessFactor, 0.02, uWet * 0.85);`)
+      .replace('#include <opaque_fragment>', `
+        float rimG = 1.0 - smoothstep(0.55, 1.0, vRev);
+        outgoingLight += vec3(0.1,1.0,0.75)*rimG*(0.35 + 0.25*sin(uTime*12.0));
+        if (uRain > 0.05) {
+          float rip = sin(length(vWorldP.xz * 12.0) - uTime * 6.0) * sin(vWorldP.x * 20.0 + uTime * 4.0);
+          outgoingLight += vec3(0.6, 0.8, 1.0) * max(0.0, rip) * uRain * 0.15;
+        }
+        #include <opaque_fragment>`);
+  };
+  mat.customProgramCacheKey = () => 'sf-patch-v2';
+  revealables.push(mat);
+  return mat;
+}
+
+const anchor = new THREE.Group(); anchor.visible = false; scene.add(anchor);
+const spin   = new THREE.Group(); anchor.add(spin);
+const arr    = new THREE.Group(); spin.add(arr);
+
+const glowU = {
+  uTime:TIME, uState:{value:0}, uHalf:{value:new THREE.Vector2(CFG.FOOT.hx, CFG.FOOT.hz)},
+  uPlane:{value:new THREE.Vector2(CFG.FOOT.hx*2+1.4, CFG.FOOT.hz*2+1.4)}, uBad:{value:new THREE.Vector4()},
+  uSafe:{value:new THREE.Color(0x19ff7a)}, uWarn:{value:new THREE.Color(0xff1f4d)}, uAlpha:{value:0}
+};
+const glow = new THREE.Mesh(
+  new THREE.PlaneGeometry(CFG.FOOT.hx*2+1.4, CFG.FOOT.hz*2+1.4).rotateX(-Math.PI/2),
+  new THREE.ShaderMaterial({
+    uniforms: glowU, transparent:true, depthWrite:false, blending:THREE.AdditiveBlending,
+    vertexShader:`varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
+    fragmentShader:`
+      uniform float uTime, uState, uAlpha; uniform vec2 uHalf, uPlane; uniform vec4 uBad; uniform vec3 uSafe, uWarn;
+      varying vec2 vUv;
+      float sdBox(vec2 p, vec2 b){ vec2 d=abs(p)-b; return length(max(d,0.0))+min(max(d.x,d.y),0.0); }
+      void main(){
+        vec2 p = (vUv-0.5)*uPlane; p.y = -p.y;
+        float d = sdBox(p, uHalf);
+        float line = smoothstep(0.045, 0.0, abs(d));
+        float halo = exp(-abs(d)*5.5)*0.55;
+        float fill = smoothstep(0.0, -0.7, d)*0.07;
+        float ang = atan(p.y, p.x);
+        float sweep  = 0.62 + 0.38*sin(uTime*2.2 - ang*2.0);
+        float strobe = 0.35 + 0.65*step(0.0, sin(uTime*19.0));
+        float pulse = mix(sweep, strobe, uState);
+        float hs = uBad.x*exp(-length(p-vec2(-uHalf.x,-uHalf.y))*1.3) + uBad.y*exp(-length(p-vec2(uHalf.x,-uHalf.y))*1.3)
+                 + uBad.z*exp(-length(p-vec2(uHalf.x, uHalf.y))*1.3) + uBad.w*exp(-length(p-vec2(-uHalf.x, uHalf.y))*1.3);
+        float cornerRipple = sin(length(p)*14.0 - uTime*8.0)*0.5 + 0.5;
+        vec3 col = mix(uSafe, uWarn, uState);
+        float a = (line*1.2 + halo + fill + hs*(0.9 + 0.5*cornerRipple)*uState)*pulse*uAlpha;
+        gl_FragColor = vec4(col*a, a);
+      }`
+  })
+);
+glow.position.y = 0.012; glow.renderOrder = 5; spin.add(glow);
+
+const snapArrow = new THREE.ArrowHelper(new THREE.Vector3(0,0,1), new THREE.Vector3(0,0.05,0), 0.8, 0x22ff88, 0.25, 0.15);
+snapArrow.visible = false; spin.add(snapArrow);
+
+
+
+
+function box(w, h, d, mat){ const m = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), mat); m.castShadow = true; m.receiveShadow = true; return m; }
+
+let panels = [], tilts = [], legs = [], ledMats = [];
+let invFan = null, invScreenMat = null;
+const interactiveObjects = [];
+
+function buildArraySystem(){
+  while (arr.children.length > 0) {
+    const c = arr.children[0];
+    if (c.geometry) c.geometry.dispose();
+    arr.remove(c);
+  }
+  panels = []; tilts = []; legs = []; ledMats = []; interactiveObjects.length = 0;
+
+  const P = CFG.PANEL, th = CFG.TILT;
+  const rp = (rz) => ({ y: CFG.PANEL_YC - 0.045*Math.cos(th) - rz*Math.sin(th) - 0.025, z: -0.045*Math.sin(th) + rz*Math.cos(th) });
+
+  for (let r = 0; r < CFG.ROWS; r++) {
+    const rowZ = (r - (CFG.ROWS-1)/2) * CFG.ROW_PITCH;
+    const row = new THREE.Group(); row.position.z = rowZ; arr.add(row);
+    const tilt = new THREE.Group(); tilt.position.y = CFG.PANEL_YC; tilt.rotation.x = th; row.add(tilt); tilts.push(tilt);
+
+    const railSpan = CFG.COLS * CFG.COL_PITCH + 0.2;
+    const railMat = patch(new THREE.MeshStandardMaterial({ color:0xaeb6c2, metalness:.95, roughness:.35 }), 0.18);
+    for (const rz of [-0.45, 0.45]) {
+      const rail = box(railSpan, 0.045, 0.05, railMat); rail.position.set(0, -0.045, rz); tilt.add(rail);
+    }
+
+    for (let c = 0; c < CFG.COLS; c++) {
+      const idx = r*CFG.COLS + c, d = 0.25 + idx*0.07;
+      const curTexKey = TYPES[state.typeIndex].tex;
+      const top   = patch(new THREE.MeshPhysicalMaterial({ map: TEX[curTexKey], color: 0xffffff }), d);
+      const frame = patch(new THREE.MeshStandardMaterial({ color:0xc2c9d3, metalness:.9, roughness:.32 }), d);
+      const m = new THREE.Mesh(new THREE.BoxGeometry(P.w, P.t, P.l), [frame,frame,top,frame,frame,frame]);
+      m.position.set((c - (CFG.COLS-1)/2) * CFG.COL_PITCH, 0, 0); m.castShadow = m.receiveShadow = true; tilt.add(m);
+
+      m.userData = {
+        type: 'panel',
+        title: `${TYPES[state.typeIndex].name} Module`,
+        sub: `Efficiency: ${TYPES[state.typeIndex].eff}% · Area: ${(P.w*P.l).toFixed(2)} m²`,
+        desc: `${TYPES[state.typeIndex].text} Built with multi-busbar anti-reflective glass.`,
+        eff: TYPES[state.typeIndex].eff
+      };
+      interactiveObjects.push(m);
+
+      const rg = patch(new THREE.MeshStandardMaterial({ map: REAR_TEX, transparent:true, opacity:TYPES[state.typeIndex].look.rear*0.9, depthWrite:false, side:THREE.DoubleSide, metalness:.7, roughness:.35 }), d);
+      const rm = new THREE.Mesh(new THREE.PlaneGeometry(P.w-.03, P.l-.03).rotateX(-Math.PI/2), rg); rm.position.set(m.position.x, 0.002, 0); tilt.add(rm);
+      panels.push({ top, frame, rg, mesh: m, tilt });
+    }
+
+    const legMat  = patch(new THREE.MeshStandardMaterial({ color:0x9aa3b0, metalness:.9, roughness:.4 }), 0.05);
+    const ballMat = patch(new THREE.MeshStandardMaterial({ color:0x8d8d8a, roughness:.95 }), 0.0);
+    const legXPositions = [-railSpan/2 + 0.2, 0, railSpan/2 - 0.2];
+    for (const lx of legXPositions) for (const rz of [0.45, -0.45]) {
+      const pos = rp(rz);
+      const leg = new THREE.Mesh(new THREE.BoxGeometry(0.05, 1, 0.05).translate(0, .5, 0), legMat);
+      leg.castShadow = true; leg.position.set(lx, 0, pos.z); leg.scale.y = pos.y; row.add(leg);
+      legs.push({ mesh: leg, h: pos.y });
+
+      const ball = box(0.34, 0.1, 0.2, ballMat); ball.position.set(lx, 0.05, pos.z); row.add(ball);
+      ball.userData = {
+        type: 'ballast',
+        title: 'High-Density Ballast Footing',
+        sub: 'Non-penetrating concrete roof support',
+        desc: 'Distributes array weight to ≤18 kg/m² while providing aerodynamic wind uplift resistance up to 140 km/h.'
+      };
+      interactiveObjects.push(ball);
+    }
+  }
+
+  /* String inverter */
+  const invX = (CFG.COLS * CFG.COL_PITCH) / 2 + 0.45;
+  const inv = new THREE.Group(); inv.position.set(invX, 0, 0); arr.add(inv);
+  const invBody = patch(new THREE.MeshStandardMaterial({ color:0xdde2e8, metalness:.35, roughness:.4 }), 0.5);
+  const invDark = patch(new THREE.MeshStandardMaterial({ color:0x3a4048, metalness:.6, roughness:.4 }), 0.5);
+  const body = box(0.18, 0.45, 0.52, invBody); body.position.y = 0.425; inv.add(body);
+  body.userData = {
+    type: 'inverter',
+    title: 'Smart String Inverter with Dual MPPT',
+    sub: '98.6% European Weighted Efficiency',
+    desc: 'Converts DC solar electricity to 230V/400V pure sine AC grid power with real-time arc-fault circuit protection (AFCI).'
+  };
+  interactiveObjects.push(body);
+
+  for (const z of [-0.2, 0.2]) { const p = box(0.04, 0.2, 0.04, invDark); p.position.set(0, 0.1, z); inv.add(p); }
+  for (let i = 0; i < 7; i++) { const f = box(0.05, 0.38, 0.012, invDark); f.position.set(-0.115, 0.425, -0.21 + i*0.07); inv.add(f); }
+
+  invScreenMat = patch(new THREE.MeshStandardMaterial({ color:0x0a2a1a, emissive:0x1fff88, emissiveIntensity:.8, roughness:.3 }), 0.55);
+  const scr = box(0.006, 0.12, 0.2, invScreenMat); scr.position.set(0.093, 0.5, -0.05); inv.add(scr); ledMats.push(invScreenMat);
+
+  const led = box(0.008, 0.03, 0.03, patch(new THREE.MeshStandardMaterial({ color:0x112211, emissive:0x22ff88, emissiveIntensity:2 }), 0.55));
+  led.position.set(0.094, 0.38, 0.15); inv.add(led); ledMats.push(led.material);
+
+  const fanGeo = new THREE.BoxGeometry(0.005, 0.08, 0.015);
+  invFan = new THREE.Mesh(fanGeo, new THREE.MeshBasicMaterial({ color:0x222222 }));
+  invFan.position.set(-0.095, 0.35, 0); inv.add(invFan);
+
+  // Update dynamic footprint
+  CFG.FOOT.hx = (CFG.COLS * CFG.COL_PITCH) / 2 + 0.6;
+  CFG.FOOT.hz = (CFG.ROWS * CFG.ROW_PITCH) / 2 + 0.4;
+  glowU.uHalf.value.set(CFG.FOOT.hx, CFG.FOOT.hz);
+  glowU.uPlane.value.set(CFG.FOOT.hx*2 + 1.4, CFG.FOOT.hz*2 + 1.4);
+
+  // Setup Exploded View Laser Alignment Guides
+  setupExplodedGuides();
+  // Setup Cell Swarm Vortex
+  setupCellSwarmVortex();
+}
+
+/* Exploded View Holographic Laser Alignment Guides */
+const laserGuidesGroup = new THREE.Group(); arr.add(laserGuidesGroup);
+const laserLines = [];
+function setupExplodedGuides(){
+  while (laserGuidesGroup.children.length > 0) {
+    const c = laserGuidesGroup.children[0];
+    if (c.geometry) c.geometry.dispose();
+    laserGuidesGroup.remove(c);
+  }
+  laserLines.length = 0;
+  const guideMat = new THREE.LineDashedMaterial({ color: 0x22ffcc, dashSize: 0.04, gapSize: 0.03, transparent: true, opacity: 0 });
+  panels.forEach(p => {
+    const geo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(0, -0.4, 0)]);
+    const line = new THREE.Line(geo, guideMat.clone());
+    line.computeLineDistances();
+    p.mesh.add(line);
+    laserLines.push(line);
+  });
+}
+
+/* 96-Wafer Cell Swarm Vortex Assembly */
+const SWARM_COUNT = 96;
+const swarmGeo = new THREE.PlaneGeometry(0.12, 0.18).rotateX(-Math.PI/2);
+const swarmMat = new THREE.ShaderMaterial({
+  uniforms:{ uTime:TIME, uProgress:{value:0} }, transparent:true, depthWrite:false, side:THREE.DoubleSide, blending:THREE.AdditiveBlending,
+  vertexShader:`varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader:`uniform float uTime, uProgress; varying vec2 vUv;
+    void main(){
+      vec2 p = abs(vUv - 0.5);
+      float border = step(0.42, max(p.x, p.y));
+      float flash = sin(uProgress * 3.14159) * 0.5;
+      float a = (0.4 + border * 0.8 + flash) * smoothstep(1.0, 0.85, uProgress);
+      gl_FragColor = vec4(vec3(0.25, 0.85, 1.0) * a, a);
+    }`
+});
+const swarmMesh = new THREE.InstancedMesh(swarmGeo, swarmMat, SWARM_COUNT);
+swarmMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+arr.add(swarmMesh);
+
+const swarmSeeds = [];
+for (let i = 0; i < SWARM_COUNT; i++) {
+  swarmSeeds.push({
+    orbitR: 1.8 + Math.random() * 2.2,
+    orbitSpeed: (Math.random() > 0.5 ? 1 : -1) * (2.0 + Math.random() * 2.5),
+    heightOffset: 1.2 + Math.random() * 1.5,
+    delay: (i / SWARM_COUNT) * 0.7,
+    phase: Math.random() * Math.PI * 2
+  });
+}
+
+function setupCellSwarmVortex(){
+  swarmMesh.visible = false;
+}
+
+function updateCellVortex(dt){
+  if (TL.phase !== 'reveal') {
+    swarmMesh.visible = false;
+    return;
+  }
+  swarmMesh.visible = true;
+  swarmMat.uniforms.uProgress.value = TL.R;
+  const _dummy = new THREE.Object3D();
+  const numPanels = panels.length;
+  if (numPanels === 0) return;
+
+  for (let i = 0; i < SWARM_COUNT; i++) {
+    const s = swarmSeeds[i];
+    const targetPanel = panels[i % numPanels];
+    const targetWorld = new THREE.Vector3();
+    targetPanel.mesh.getWorldPosition(targetWorld);
+    const targetLocal = arr.worldToLocal(targetWorld.clone());
+
+    // Localized grid offset on panel
+    const gridX = ((i % 6) - 2.5) * 0.16;
+    const gridZ = ((Math.floor(i / 6) % 10) - 4.5) * 0.16;
+    const snapTarget = targetLocal.clone().add(new THREE.Vector3(gridX, 0.02, gridZ));
+
+    const u = clamp((TL.R - s.delay) / 0.35);
+    const easeU = easeInOutCubic(u);
+
+    // Helical vortex position
+    const ang = s.phase + TIME.value * s.orbitSpeed;
+    const currentR = s.orbitR * (1.0 - easeU);
+    const currentH = snapTarget.y + s.heightOffset * (1.0 - easeU) + Math.sin(TIME.value * 4.0 + i) * 0.05 * (1.0 - easeU);
+    const vortexPos = new THREE.Vector3(
+      Math.cos(ang) * currentR,
+      currentH,
+      Math.sin(ang) * currentR
+    );
+
+    const pos = vortexPos.lerp(snapTarget, easeU);
+    _dummy.position.copy(pos);
+    _dummy.rotation.set(
+      (1.0 - easeU) * Math.sin(TIME.value * 5 + i),
+      CFG.TILT * easeU + (1.0 - easeU) * ang,
+      0
+    );
+    const scale = (0.2 + 0.8 * easeU);
+    _dummy.scale.setScalar(scale);
+    _dummy.updateMatrix();
+    swarmMesh.setMatrixAt(i, _dummy.matrix);
+
+    if (u >= 0.98 && u <= 1.0 && Math.random() < 0.06) {
+      if (sfx) sfx.playSnap();
+    }
+  }
+  swarmMesh.instanceMatrix.needsUpdate = true;
+}
+buildArraySystem();
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   6. REAL SUN ENGINE & SUN-PATH ARC
+   ═══════════════════════════════════════════════════════════════════════════ */
+const shadowMat = new THREE.ShadowMaterial({ opacity: 0 });
+const shadowPlane = new THREE.Mesh(new THREE.PlaneGeometry(28, 28).rotateX(-Math.PI/2), shadowMat);
+shadowPlane.receiveShadow = true; shadowPlane.renderOrder = -1; anchor.add(shadowPlane);
+
+const sun = new THREE.DirectionalLight(0xfff3e0, 2.4);
+sun.position.set(4.5, 8, 3);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left:-7.5, right:7.5, top:7.5, bottom:-7.5, near:.5, far:32 });
+sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.02;
+anchor.add(sun); anchor.add(sun.target);
+
+function computeSunPosition(lat, lon, dateObj, overrideHour = null){
+  const d = new Date(dateObj);
+  if (overrideHour !== null) {
+    const hrs = Math.floor(overrideHour);
+    const mins = Math.floor((overrideHour - hrs) * 60);
+    d.setHours(hrs, mins, 0, 0);
+  }
+  const rad = Math.PI / 180, deg = 180 / Math.PI;
+  const start = new Date(d.getFullYear(), 0, 0);
+  const diff = d - start;
+  const oneDay = 1000 * 60 * 60 * 24;
+  const dayOfYear = Math.floor(diff / oneDay);
+
+  const gamma = 2 * Math.PI / 365 * (dayOfYear - 1 + (d.getUTCHours() - 12) / 24);
+  const eqtime = 229.18 * (0.000075 + 0.001868*Math.cos(gamma) - 0.032077*Math.sin(gamma)
+                 - 0.014615*Math.cos(2*gamma) - 0.040849*Math.sin(2*gamma));
+  const decl = 0.006918 - 0.399912*Math.cos(gamma) + 0.070257*Math.sin(gamma)
+               - 0.006758*Math.cos(2*gamma) + 0.000907*Math.sin(2*gamma);
+
+  const timeOffset = eqtime + 4 * lon - 60 * d.getTimezoneOffset();
+  const trueSolarTime = d.getHours() * 60 + d.getMinutes() + d.getSeconds() / 60 + timeOffset;
+  const solarTime = (trueSolarTime % 1440 + 1440) % 1440;
+  const ha = (solarTime / 4 - 180) * rad;
+
+  const phi = lat * rad;
+  const cZenith = Math.sin(phi)*Math.sin(decl) + Math.cos(phi)*Math.cos(decl)*Math.cos(ha);
+  const zenith = Math.acos(clamp(cZenith, -1, 1));
+  const alt = Math.PI/2 - zenith;
+
+  const cAz = (Math.sin(phi)*Math.cos(zenith) - Math.sin(decl)) / (Math.cos(phi)*Math.sin(zenith) + 1e-6);
+  let az = Math.acos(clamp(cAz, -1, 1));
+  if (ha > 0) az = 2 * Math.PI - az;
+
+  return { altitude: alt * deg, azimuth: az * deg, altRad: alt, azRad: az };
+}
+
+const sunArcGroup = new THREE.Group(); anchor.add(sunArcGroup);
+let sunMarker = null;
+function buildSunArc(lat, lon, dateObj, compassHeading = 0){
+  while (sunArcGroup.children.length > 0) {
+    const c = sunArcGroup.children[0];
+    if (c.geometry) c.geometry.dispose();
+    sunArcGroup.remove(c);
+  }
+  const pts = [];
+  const R = 9.5;
+  for (let h = 6.0; h <= 19.0; h += 0.25) {
+    const s = computeSunPosition(lat, lon, dateObj, h);
+    if (s.altitude >= -2) {
+      const theta = s.azRad - compassHeading * Math.PI/180;
+      const x = R * Math.cos(s.altRad) * Math.sin(theta);
+      const y = R * Math.sin(s.altRad);
+      const z = -R * Math.cos(s.altRad) * Math.cos(theta);
+      pts.push(new THREE.Vector3(x, Math.max(0.05, y), z));
+    }
+  }
+  if (pts.length > 1) {
+    const arcGeo = new THREE.BufferGeometry().setFromPoints(pts);
+    const arcMat = new THREE.LineBasicMaterial({ color: 0xffd152, transparent: true, opacity: 0.65 });
+    sunArcGroup.add(new THREE.Line(arcGeo, arcMat));
+  }
+  const markerGeo = new THREE.SphereGeometry(0.24, 16, 16);
+  const markerMat = new THREE.MeshBasicMaterial({ color: 0xfff6a8 });
+  sunMarker = new THREE.Mesh(markerGeo, markerMat);
+  sunArcGroup.add(sunMarker);
+}
+
+const SUN_STATE = {
+  lat: CFG.COARSE_LAT, lon: CFG.COARSE_LON,
+  compassOffset: 0, overrideHour: null,
+  altitude: 45, azimuth: 180, isNight: false,
+  dni: 850, diffuse: 120, cloudCover: 10,
+  weatherCode: 0, temp: 22
+};
+
+function updateSunLighting(){
+  const now = new Date();
+  const sunPos = computeSunPosition(SUN_STATE.lat, SUN_STATE.lon, now, SUN_STATE.overrideHour);
+  SUN_STATE.altitude = sunPos.altitude;
+  SUN_STATE.azimuth = sunPos.azimuth;
+
+  const R = 10;
+  const rotAngle = (sunPos.azimuth - SUN_STATE.compassOffset) * Math.PI / 180;
+  const sx = R * Math.cos(sunPos.altRad) * Math.sin(rotAngle);
+  const sy = R * Math.sin(sunPos.altRad);
+  const sz = -R * Math.cos(sunPos.altRad) * Math.cos(rotAngle);
+
+  if (sunMarker) {
+    const mR = 9.5;
+    sunMarker.position.set(
+      mR * Math.cos(sunPos.altRad) * Math.sin(rotAngle),
+      Math.max(0.1, mR * Math.sin(sunPos.altRad)),
+      -mR * Math.cos(sunPos.altRad) * Math.cos(rotAngle)
+    );
+  }
+
+  SUN_STATE.isNight = sunPos.altitude <= 0;
+  const sunOrb = $('#sunStatusOrb');
+  if (sunOrb) sunOrb.className = `w-2 h-2 rounded-full ${SUN_STATE.isNight ? 'bg-indigo-400' : 'bg-emerald-400'} inline-block`;
+
+  if (SUN_STATE.isNight) {
+    sun.position.set(sx, Math.max(1.5, Math.abs(sy)), sz);
+    sun.color.setRGB(0.42, 0.55, 0.75);
+    sun.intensity = 0.25;
+    hemiLight.color.setRGB(0.15, 0.22, 0.35);
+    hemiLight.groundColor.setRGB(0.04, 0.05, 0.08);
+    hemiLight.intensity = 0.3;
+    shadowMat.opacity = 0.08;
+  } else {
+    sun.position.set(sx, Math.max(0.5, sy), sz);
+    const alt = sunPos.altitude;
+    let r = 1.0, g = 0.96, b = 0.91;
+    if (alt < 6) { r = 1.0; g = 0.72; b = 0.45; }
+    else if (alt < 25) { r = 1.0; g = 0.88; b = 0.76; }
+    if (SUN_STATE.cloudCover > 60) {
+      const oc = (SUN_STATE.cloudCover - 60) / 40;
+      r = clamp(r - oc*0.12); g = clamp(g + oc*0.02); b = clamp(b + oc*0.15);
+    }
+    sun.color.setRGB(r, g, b);
+
+    const dniNorm = clamp(SUN_STATE.dni / 1000, 0.05, 1.2);
+    const diffNorm = clamp(SUN_STATE.diffuse / 400, 0.15, 1.0);
+    sun.intensity = dniNorm * 2.5 * clamp(sunPos.altRad / 0.5, 0.2, 1.0);
+    hemiLight.color.setRGB(r*0.9, g*0.95, 1.0);
+    hemiLight.intensity = diffNorm * 0.7;
+
+    const cloudFactor = clamp(SUN_STATE.cloudCover / 100);
+    shadowMat.opacity = clamp((0.42 - cloudFactor * 0.28) * smooth(clamp(TL.R * 1.3 - 0.1)), 0.04, 0.45);
+  }
+
+  const sunPosReadout = $('#sunPosReadout');
+  if (sunPosReadout) sunPosReadout.textContent = `Alt: ${sunPos.altitude.toFixed(0)}° · Az: ${sunPos.azimuth.toFixed(0)}°`;
+  const sunIrrReadout = $('#sunIrrReadout');
+  if (sunIrrReadout) sunIrrReadout.textContent = `${SUN_STATE.isNight ? '0' : Math.round(SUN_STATE.dni)} W/m² (DNI)`;
+
+  const panelNormal = new THREE.Vector3(0, Math.cos(CFG.TILT), -Math.sin(CFG.TILT));
+  const sunDir = sun.position.clone().normalize();
+  const incAngle = Math.round(sunDir.angleTo(panelNormal) * 180 / Math.PI);
+  const sunIncElem = $('#sunIncidentAngle');
+  if (sunIncElem) sunIncElem.textContent = `Incident: ${incAngle}° ${incAngle < 35 ? '★ Optimal' : ''}`;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   7. OPEN-METEO WEATHER ENGINE
+   ═══════════════════════════════════════════════════════════════════════════ */
+let lastWeatherFetch = 0;
+async function fetchOpenMeteoWeather(lat, lon){
+  const now = Date.now();
+  if (now - lastWeatherFetch < CFG.WEATHER_CACHE_MS && lastWeatherFetch > 0) return;
+  const ctrl = new AbortController();
+  const tid = setTimeout(() => ctrl.abort(), CFG.WEATHER_TIMEOUT);
+  try {
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(2)}&longitude=${lon.toFixed(2)}&current=temperature_2m,is_day,precipitation,weather_code,cloud_cover,wind_speed_10m,shortwave_radiation,direct_radiation,diffuse_radiation,direct_normal_irradiance&timezone=auto`;
+    const res = await fetch(url, { signal: ctrl.signal });
+    clearTimeout(tid);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    if (data.current) {
+      lastWeatherFetch = now;
+      const c = data.current;
+      SUN_STATE.temp = c.temperature_2m || 22;
+      SUN_STATE.weatherCode = c.weather_code || 0;
+      SUN_STATE.cloudCover = c.cloud_cover ?? 15;
+      SUN_STATE.dni = c.direct_normal_irradiance ?? 800;
+      SUN_STATE.diffuse = c.diffuse_radiation ?? 120;
+
+      const isRain = [51,53,55,61,63,65,66,67,80,81,82,95,96].includes(SUN_STATE.weatherCode);
+      WEATHER_STATE.wetness.value = isRain ? 1.0 : 0.0;
+      WEATHER_STATE.rainIntensity.value = isRain ? 0.8 : 0.0;
+
+      if ([45, 48].includes(SUN_STATE.weatherCode)) scene.fog = new THREE.FogExp2(0x1a2634, 0.035);
+      else scene.fog = null;
+
+      const wDesc = getWeatherDescription(SUN_STATE.weatherCode);
+      const wIcon = getWeatherIcon(SUN_STATE.weatherCode);
+      $('#weatherDesc').textContent = wDesc;
+      $('#weatherIcon').textContent = wIcon;
+      $('#weatherRad').textContent = `${Math.round(SUN_STATE.dni)} W/m²`;
+      $('#sunWeatherCond').textContent = `${wDesc} (${SUN_STATE.cloudCover}% clouds)`;
+      $('#weatherChip').classList.remove('hidden');
+
+      runAIDecisionAnalysis();
+    }
+  } catch (err) {
+    console.warn('Weather fallback:', err.message);
+    SUN_STATE.cloudCover = 10;
+    SUN_STATE.dni = 850;
+    SUN_STATE.diffuse = 110;
+    runAIDecisionAnalysis();
+  }
+}
+
+function getWeatherDescription(code){
+  if (code === 0) return 'Clear Sky';
+  if (code <= 3) return 'Partly Cloudy';
+  if ([45, 48].includes(code)) return 'Fog / Mist';
+  if ([51, 53, 55].includes(code)) return 'Drizzle';
+  if ([61, 63, 65].includes(code)) return 'Rain';
+  if ([71, 73, 75].includes(code)) return 'Snow';
+  if ([80, 81, 82].includes(code)) return 'Showers';
+  if ([95, 96, 99].includes(code)) return 'Thunderstorm';
+  return 'Clear Sky';
+}
+function getWeatherIcon(code){
+  if (code === 0) return '☀';
+  if (code <= 3) return '⛅';
+  if ([45, 48].includes(code)) return '🌫';
+  if ([51, 53, 55, 61, 63, 65, 80, 81, 82].includes(code)) return '🌧';
+  if ([71, 73, 75].includes(code)) return '❄';
+  if ([95, 96, 99].includes(code)) return '⛈';
+  return '☀';
+}
+
+/* Section 8 moved above Section 5 */
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   9. ADVANCED ANTIGRAVITY FIELD v3: Hologram Rings, Electric Arcs & Dust Billows
+   ═══════════════════════════════════════════════════════════════════════════ */
+const FIELD = { alpha: 0, shock: 0, dustBurst: 0 };
+const field = new THREE.Group(); field.visible = false; anchor.add(field);
+
+// Dual Counter-Rotating Hologram Techno Rings
+const ringMatA = new THREE.ShaderMaterial({
+  uniforms:{ uTime:TIME, uAlpha:{value:0} }, transparent:true, depthWrite:false, blending:THREE.AdditiveBlending,
+  vertexShader:`varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
+  fragmentShader:`uniform float uTime, uAlpha; varying vec2 vUv;
+    void main(){
+      vec2 p = vUv - 0.5; float r = length(p)*2.0; float th = atan(p.y, p.x);
+      float circle = smoothstep(0.03, 0.0, abs(r - 0.88));
+      float ticks = step(0.65, sin(th * 32.0 + uTime * 2.5));
+      float runes = step(0.78, sin(th * 64.0 - uTime * 4.0));
+      float a = (circle * 1.4 + ticks * 0.45 + runes * 0.35) * uAlpha * smoothstep(0.0, 0.2, 1.0 - r);
+      gl_FragColor = vec4(vec3(0.2, 0.95, 0.85) * a, a);
+    }`
+});
+const holoRingA = new THREE.Mesh(new THREE.PlaneGeometry(6.4, 6.4).rotateX(-Math.PI/2), ringMatA);
+holoRingA.position.y = 0.03; field.add(holoRingA);
+
+const ringMatB = new THREE.ShaderMaterial({
+  uniforms:{ uTime:TIME, uAlpha:{value:0} }, transparent:true, depthWrite:false, blending:THREE.AdditiveBlending,
+  vertexShader:`varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
+  fragmentShader:`uniform float uTime, uAlpha; varying vec2 vUv;
+    void main(){
+      vec2 p = vUv - 0.5; float r = length(p)*2.0; float th = atan(p.y, p.x);
+      float circle = smoothstep(0.02, 0.0, abs(r - 0.72));
+      float segments = step(0.3, sin(th * 12.0 - uTime * 1.8));
+      float a = (circle * segments * 1.2) * uAlpha;
+      gl_FragColor = vec4(vec3(0.35, 0.75, 1.0) * a, a);
+    }`
+});
+const holoRingB = new THREE.Mesh(new THREE.PlaneGeometry(6.4, 6.4).rotateX(-Math.PI/2), ringMatB);
+holoRingB.position.y = 0.035; field.add(holoRingB);
+
+// Procedural Electric Lightning Arcs
+const electricArcsGroup = new THREE.Group(); field.add(electricArcsGroup);
+const arcLines = [];
+for (let i = 0; i < 6; i++) {
+  const arcGeo = new THREE.BufferGeometry();
+  const arcPts = new Float32Array(16 * 3);
+  arcGeo.setAttribute('position', new THREE.BufferAttribute(arcPts, 3));
+  const arcMat = new THREE.LineBasicMaterial({ color: 0x55ffff, transparent:true, opacity:0, linewidth: 2 });
+  const arcLine = new THREE.Line(arcGeo, arcMat);
+  electricArcsGroup.add(arcLine);
+  arcLines.push(arcLine);
+}
+
+function updateElectricArcs(dt){
+  if (FIELD.alpha < 0.1 || !field.visible) {
+    arcLines.forEach(l => l.material.opacity = 0);
+    return;
+  }
+  const t = TIME.value;
+  const { hx, hz } = CFG.FOOT;
+  const corners = [
+    new THREE.Vector3(-hx, 0.05, -hz), new THREE.Vector3(hx, 0.05, -hz),
+    new THREE.Vector3(hx, 0.05, hz),   new THREE.Vector3(-hx, 0.05, hz),
+    new THREE.Vector3(-hx, 0.05, 0),   new THREE.Vector3(hx, 0.05, 0)
+  ];
+  arcLines.forEach((line, idx) => {
+    if (Math.random() < 0.25) {
+      if (sfx && Math.random() < 0.08) sfx.playArc();
+      const pAttr = line.geometry.attributes.position;
+      const start = corners[idx % corners.length];
+      const end = start.clone().add(new THREE.Vector3((Math.random()-0.5)*0.4, CFG.HOVER * 1.1 + Math.sin(t*3)*0.05, (Math.random()-0.5)*0.4));
+      for (let s = 0; s < 16; s++) {
+        const u = s / 15;
+        const pos = start.clone().lerp(end, u);
+        if (s > 0 && s < 15) {
+          pos.x += (Math.random() - 0.5) * 0.12;
+          pos.y += (Math.random() - 0.5) * 0.08;
+          pos.z += (Math.random() - 0.5) * 0.12;
+        }
+        pAttr.setXYZ(s, pos.x, pos.y, pos.z);
+      }
+      pAttr.needsUpdate = true;
+      line.material.opacity = FIELD.alpha * (0.6 + 0.4 * Math.random());
+    } else {
+      line.material.opacity = Math.max(0, line.material.opacity - dt * 6.0);
+    }
+  });
+}
+
+// Volumetric Ground Dust Puffs Burst on Touchdown
+const DUST_N = 120;
+const dustGeo = new THREE.BufferGeometry();
+const dustPos = new Float32Array(DUST_N * 3);
+const dustVel = new Float32Array(DUST_N * 3);
+const dustLife = new Float32Array(DUST_N);
+const dustScale = new Float32Array(DUST_N);
+for (let i = 0; i < DUST_N; i++) {
+  dustPos[i*3] = 0; dustPos[i*3+1] = -10; dustPos[i*3+2] = 0;
+  dustVel[i*3] = 0; dustVel[i*3+1] = 0; dustVel[i*3+2] = 0;
+  dustLife[i] = 0; dustScale[i] = 1;
+}
+dustGeo.setAttribute('position', new THREE.BufferAttribute(dustPos, 3));
+dustGeo.setAttribute('aLife', new THREE.BufferAttribute(dustLife, 1));
+dustGeo.setAttribute('aScale', new THREE.BufferAttribute(dustScale, 1));
+const dustMat = new THREE.ShaderMaterial({
+  uniforms:{ uPx:{value:renderer.getPixelRatio()*14} }, transparent:true, depthWrite:false, blending:THREE.AdditiveBlending,
+  vertexShader:`attribute float aLife; attribute float aScale; uniform float uPx; varying float vA;
+    void main(){
+      vec4 mv = modelViewMatrix * vec4(position, 1.0);
+      gl_Position = projectionMatrix * mv;
+      gl_PointSize = uPx * aScale * (1.0 + aLife * 2.2) * clamp(2.5 / -mv.z, 0.4, 4.0);
+      vA = (1.0 - aLife) * smoothstep(0.0, 0.15, aLife);
+    }`,
+  fragmentShader:`varying float vA;
+    void main(){
+      float d = length(gl_PointCoord - 0.5);
+      float a = smoothstep(0.5, 0.05, d) * vA * 0.45;
+      gl_FragColor = vec4(vec3(0.85, 0.88, 0.92) * a, a);
+    }`
+});
+const dustParticles = new THREE.Points(dustGeo, dustMat);
+dustParticles.frustumCulled = false; anchor.add(dustParticles);
+
+function triggerDustImpact(corners){
+  corners.forEach(c => {
+    for (let i = 0; i < 15; i++) {
+      const idx = (Math.random() * DUST_N) | 0;
+      dustPos[idx*3] = c.x + (Math.random()-0.5)*0.1;
+      dustPos[idx*3+1] = 0.02;
+      dustPos[idx*3+2] = c.z + (Math.random()-0.5)*0.1;
+      const ang = Math.random() * Math.PI * 2;
+      const spd = 0.6 + Math.random() * 1.4;
+      dustVel[idx*3] = Math.cos(ang) * spd;
+      dustVel[idx*3+1] = 0.25 + Math.random() * 0.45;
+      dustVel[idx*3+2] = Math.sin(ang) * spd;
+      dustLife[idx] = 0.01;
+      dustScale[idx] = 0.8 + Math.random() * 1.2;
+    }
+  });
+  dustGeo.attributes.position.needsUpdate = true;
+}
+
+function updateDustParticles(dt){
+  let active = false;
+  const pAttr = dustGeo.attributes.position;
+  const lAttr = dustGeo.attributes.aLife;
+  for (let i = 0; i < DUST_N; i++) {
+    if (dustLife[i] > 0) {
+      active = true;
+      dustLife[i] += dt * 1.6;
+      if (dustLife[i] >= 1.0) {
+        dustLife[i] = 0;
+        dustPos[i*3+1] = -10;
+      } else {
+        dustPos[i*3] += dustVel[i*3] * dt;
+        dustPos[i*3+1] += dustVel[i*3+1] * dt;
+        dustPos[i*3+2] += dustVel[i*3+2] * dt;
+        dustVel[i*3] *= 0.92;
+        dustVel[i*3+1] *= 0.90;
+        dustVel[i*3+2] *= 0.92;
+      }
+    }
+  }
+  if (active) {
+    pAttr.needsUpdate = true;
+    lAttr.needsUpdate = true;
+  }
+}
+
+{
+  const R = CFG.FIELD_R;
+  const disc = new THREE.Mesh(new THREE.CircleGeometry(R, 96).rotateX(-Math.PI/2), new THREE.ShaderMaterial({
+    uniforms:{ uTime:TIME, uAlpha:{value:0}, uR:{value:R} }, transparent:true, depthWrite:false, blending:THREE.AdditiveBlending,
+    vertexShader:`varying vec3 vP; void main(){ vP=position; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
+    fragmentShader:`uniform float uTime,uAlpha,uR; varying vec3 vP;
+      void main(){ float d=length(vP.xz)/uR;
+        float rings=pow(abs(sin(d*18.0-uTime*2.4)),14.0);
+        float edge=smoothstep(0.9,1.0,d)*smoothstep(1.0,0.97,d)*2.0;
+        float a=((1.0-d)*0.28+rings*0.55+edge)*uAlpha*smoothstep(1.0,0.96,d);
+        gl_FragColor=vec4(vec3(0.35,0.8,1.0)*a, a); }` }));
+  disc.position.y = 0.02; field.add(disc);
+
+  const dome = new THREE.Mesh(new THREE.SphereGeometry(R, 48, 24, 0, Math.PI*2, 0, Math.PI*0.5), new THREE.ShaderMaterial({
+    uniforms:{ uTime:TIME, uAlpha:{value:0} }, transparent:true, depthWrite:false, side:THREE.BackSide, blending:THREE.AdditiveBlending,
+    vertexShader:`varying vec3 vNormal; varying vec3 vViewPos; void main(){
+      vNormal = normalize(normalMatrix * normal);
+      vec4 mv = modelViewMatrix * vec4(position, 1.0);
+      vViewPos = -mv.xyz;
+      gl_Position = projectionMatrix * mv;
+    }`,
+    fragmentShader:`uniform float uTime, uAlpha; varying vec3 vNormal; varying vec3 vViewPos;
+      void main(){
+        vec3 N = normalize(vNormal); vec3 V = normalize(vViewPos);
+        float fres = pow(1.0 - abs(dot(N, V)), 2.5);
+        float ripple = sin(vViewPos.y*10.0 - uTime*4.0)*0.25 + 0.75;
+        float a = fres * ripple * uAlpha * 0.45;
+        gl_FragColor = vec4(vec3(0.2, 0.9, 0.75)*a, a);
+      }`
+  }));
+  dome.position.y = 0.01; field.add(dome);
+
+  const N = 220, seed = new Float32Array(N*3), pos0 = new Float32Array(N*3);
+  const rr = mulberry32(42); for (let i = 0; i < N*3; i++) seed[i] = rr();
+  const pg = new THREE.BufferGeometry(); pg.setAttribute('position', new THREE.BufferAttribute(pos0, 3)); pg.setAttribute('aSeed', new THREE.BufferAttribute(seed, 3));
+  const parts = new THREE.Points(pg, new THREE.ShaderMaterial({
+    uniforms:{ uTime:TIME, uAlpha:{value:0}, uR:{value:R}, uPx:{value:renderer.getPixelRatio()*8} }, transparent:true, depthWrite:false, blending:THREE.AdditiveBlending,
+    vertexShader:`uniform float uTime,uR,uPx; attribute vec3 aSeed; varying float vA;
+      void main(){ float r=sqrt(aSeed.x)*uR*0.95, th=aSeed.y*6.2831+uTime*0.35;
+        float y=fract(aSeed.z+uTime*(0.14+aSeed.x*0.25))*1.3;
+        vec4 mv=modelViewMatrix*vec4(cos(th)*r,y,sin(th)*r,1.0); gl_Position=projectionMatrix*mv;
+        gl_PointSize=uPx*clamp(2.0/-mv.z,0.4,3.0); vA=smoothstep(1.3,0.8,y)*smoothstep(0.0,0.1,y); }`,
+    fragmentShader:`uniform float uAlpha; varying float vA;
+      void main(){ float d=length(gl_PointCoord-0.5); float a=smoothstep(0.5,0.05,d)*vA*uAlpha; gl_FragColor=vec4(vec3(0.4,0.9,1.0)*a,a); }` }));
+  parts.frustumCulled = false; field.add(parts);
+
+  const shock = new THREE.Mesh(new THREE.RingGeometry(0.9, 1.0, 96).rotateX(-Math.PI/2), new THREE.ShaderMaterial({
+    uniforms:{ uA:{value:0} }, transparent:true, depthWrite:false, blending:THREE.AdditiveBlending,
+    vertexShader:`void main(){ gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
+    fragmentShader:`uniform float uA; void main(){ gl_FragColor=vec4(vec3(0.35,1.0,0.7)*uA,uA); }` }));
+  shock.position.y = 0.025; field.add(shock);
+  field.userData = { disc, dome, parts, shock, holoRingA, holoRingB };
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   10. ADVANCED LIVE ENERGY VISUALS: Photon Ray Beams, Verlet Cable & Flowing Energy
+   ═══════════════════════════════════════════════════════════════════════════ */
+const energyRaysGroup = new THREE.Group(); anchor.add(energyRaysGroup);
+const numRays = 12;
+const rayLines = [];
+const photonPulses = [];
+
+// Sun-Ray Beams with Pulsating Shimmer
+for (let i = 0; i < numRays; i++) {
+  const geo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]);
+  const mat = new THREE.LineBasicMaterial({ color: 0xfff088, transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending });
+  const line = new THREE.Line(geo, mat);
+  energyRaysGroup.add(line);
+  rayLines.push(line);
+
+  // Photon Splash Ring on Panel Surface
+  const splashGeo = new THREE.RingGeometry(0.02, 0.08, 24).rotateX(-Math.PI/2);
+  const splashMat = new THREE.MeshBasicMaterial({ color: 0xfff5aa, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
+  const splash = new THREE.Mesh(splashGeo, splashMat);
+  energyRaysGroup.add(splash);
+  photonPulses.push({ splash, phase: Math.random() * Math.PI * 2 });
+}
+
+// 12-Node Verlet Physics Hanging DC Cable
+const CABLE_NODES = 12;
+const cablePoints = [];
+const cableOldPoints = [];
+for (let i = 0; i < CABLE_NODES; i++) {
+  cablePoints.push(new THREE.Vector3(0, 0.4 - i*0.03, 0));
+  cableOldPoints.push(new THREE.Vector3(0, 0.4 - i*0.03, 0));
+}
+const cableGeo = new THREE.BufferGeometry().setFromPoints(cablePoints);
+const cableMat = new THREE.LineBasicMaterial({ color: 0x111115, linewidth: 3 });
+const cableLine = new THREE.Line(cableGeo, cableMat);
+arr.add(cableLine);
+
+// 8 Flowing Photon Energy Beads along the DC Cable
+const FLOW_BEADS_N = 8;
+const beadGeo = new THREE.SphereGeometry(0.022, 12, 12);
+const beadMat = new THREE.MeshBasicMaterial({ color: 0x38ff98, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending });
+const beadInstanced = new THREE.InstancedMesh(beadGeo, beadMat, FLOW_BEADS_N);
+beadInstanced.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+arr.add(beadInstanced);
+
+// Solar Heat Shimmer Distortion Plane
+const shimmerMat = new THREE.ShaderMaterial({
+  uniforms:{ uTime:TIME, uDni:{value:800} }, transparent:true, depthWrite:false, blending:THREE.AdditiveBlending,
+  vertexShader:`varying vec2 vUv; uniform float uTime;
+    void main(){
+      vUv = uv;
+      vec3 p = position;
+      p.y += sin(p.x * 12.0 + uTime * 6.0) * cos(p.z * 10.0 + uTime * 5.0) * 0.015;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+    }`,
+  fragmentShader:`uniform float uTime, uDni; varying vec2 vUv;
+    void main(){
+      float d = length(vUv - 0.5);
+      float waves = sin(vUv.x * 24.0 + uTime * 8.0) * sin(vUv.y * 24.0 - uTime * 7.0);
+      float intensity = clamp((uDni - 500.0) / 500.0, 0.0, 1.0);
+      float a = smoothstep(0.5, 0.1, d) * (0.15 + 0.12 * waves) * intensity;
+      gl_FragColor = vec4(vec3(1.0, 0.95, 0.7) * a, a);
+    }`
+});
+const heatShimmerMesh = new THREE.Mesh(new THREE.PlaneGeometry(3.5, 2.2).rotateX(-Math.PI/2), shimmerMat);
+heatShimmerMesh.position.set(0, CFG.PANEL_YC + 0.08, 0);
+arr.add(heatShimmerMesh);
+
+function updateVerletCable(dt){
+  if (!state.placed) return;
+  const startPos = new THREE.Vector3(CFG.FOOT.hx * 0.4, 0.35 + rackLift, 0);
+  const endPos = new THREE.Vector3((CFG.COLS * CFG.COL_PITCH) / 2 + 0.38, 0.22, 0);
+  
+  cablePoints[0].copy(startPos);
+  cablePoints[CABLE_NODES - 1].copy(endPos);
+
+  const gravity = new THREE.Vector3(0, -9.8 * 0.04, 0);
+  const wind = new THREE.Vector3(Math.sin(TIME.value*2.5)*0.008, 0, Math.cos(TIME.value*1.8)*0.006);
+
+  // Verlet Integration
+  for (let i = 1; i < CABLE_NODES - 1; i++) {
+    const cur = cablePoints[i];
+    const prev = cableOldPoints[i];
+    const vel = cur.clone().sub(prev).multiplyScalar(0.96);
+    cableOldPoints[i].copy(cur);
+    cur.add(vel).add(gravity.clone().multiplyScalar(dt*dt)).add(wind.clone().multiplyScalar(dt*dt));
+  }
+
+  // Distance Constraints (Relaxation)
+  const targetSegLen = startPos.distanceTo(endPos) / (CABLE_NODES - 1) * 1.15;
+  for (let iter = 0; iter < 5; iter++) {
+    cablePoints[0].copy(startPos);
+    cablePoints[CABLE_NODES - 1].copy(endPos);
+    for (let i = 0; i < CABLE_NODES - 1; i++) {
+      const p1 = cablePoints[i];
+      const p2 = cablePoints[i + 1];
+      const delta = p2.clone().sub(p1);
+      const d = delta.length();
+      if (d > 0.0001) {
+        const diff = (d - targetSegLen) / d;
+        if (i > 0) p1.add(delta.clone().multiplyScalar(0.5 * diff));
+        if (i + 1 < CABLE_NODES - 1) p2.sub(delta.clone().multiplyScalar(0.5 * diff));
+      }
+    }
+  }
+
+  cableGeo.setFromPoints(cablePoints);
+
+  // Animate Flowing Photon Energy Beads along Cable Spline
+  if (CFG.ENERGY_BEAMS_ENABLED && !SUN_STATE.isNight) {
+    beadInstanced.visible = true;
+    const curve = new THREE.CatmullRomCurve3(cablePoints);
+    const speed = clamp(SUN_STATE.dni / 800, 0.4, 2.0);
+    const _dummy = new THREE.Object3D();
+    for (let b = 0; b < FLOW_BEADS_N; b++) {
+      const u = ((TIME.value * speed * 0.35 + b / FLOW_BEADS_N) % 1.0);
+      const pt = curve.getPointAt(u);
+      _dummy.position.copy(pt);
+      const pulseScale = 0.8 + 0.4 * Math.sin(TIME.value * 8.0 + b);
+      _dummy.scale.setScalar(pulseScale);
+      _dummy.updateMatrix();
+      beadInstanced.setMatrixAt(b, _dummy.matrix);
+    }
+    beadInstanced.instanceMatrix.needsUpdate = true;
+  } else {
+    beadInstanced.visible = false;
+  }
+}
+
+function updateEnergyVisuals(dt){
+  updateVerletCable(dt);
+  shimmerMat.uniforms.uDni.value = SUN_STATE.dni;
+  heatShimmerMesh.visible = CFG.ENERGY_BEAMS_ENABLED && state.placed && !SUN_STATE.isNight && (SUN_STATE.dni > 500);
+
+  if (!CFG.ENERGY_BEAMS_ENABLED || !state.placed || SUN_STATE.isNight) {
+    energyRaysGroup.visible = false;
+    return;
+  }
+  energyRaysGroup.visible = true;
+  const sunPos = sun.position.clone();
+
+  panels.slice(0, numRays).forEach((p, i) => {
+    if (rayLines[i]) {
+      const panelWorld = new THREE.Vector3();
+      p.mesh.getWorldPosition(panelWorld);
+      const localP = anchor.worldToLocal(panelWorld.clone());
+      const pts = [sunPos.clone().multiplyScalar(0.7).add(localP.clone().multiplyScalar(0.3)), localP];
+      rayLines[i].geometry.setFromPoints(pts);
+
+      const pulse = Math.sin(TIME.value * 6.0 + i * 1.5);
+      rayLines[i].material.opacity = clamp(SUN_STATE.dni / 1000 * 0.45 + 0.12 * pulse, 0.1, 0.65);
+
+      // Splash Ring Animation
+      const sp = photonPulses[i];
+      if (sp && sp.splash) {
+        sp.splash.position.copy(localP).add(new THREE.Vector3(0, 0.02, 0));
+        const sT = (TIME.value * 3.0 + sp.phase) % 1.0;
+        sp.splash.scale.setScalar(1.0 + sT * 2.5);
+        sp.splash.material.opacity = (1.0 - sT) * clamp(SUN_STATE.dni / 1000, 0.1, 0.8) * 0.6;
+      }
+    }
+  });
+
+  if (invFan) {
+    const fanSpeed = SUN_STATE.isNight ? 1.0 : clamp(SUN_STATE.dni / 150, 2.0, 18.0);
+    invFan.rotation.x += dt * fanSpeed;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   10B. ULTRA ADVANCED 3D SYSTEMS: Thermal Heatmap, Aerodynamic Wind, 3D HUDs, Obstacle & Cine Tour
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* 1. FLIR IR Thermal Heatmap Material System */
+const thermalMat = new THREE.ShaderMaterial({
+  uniforms: { uTime: TIME, uAmbient: { value: 25 }, uIrradiance: { value: 850 } },
+  transparent: false,
+  vertexShader: `varying vec2 vUv; varying vec3 vWorldP;
+    void main(){
+      vUv = uv;
+      vec4 wp = modelMatrix * vec4(position, 1.0);
+      vWorldP = wp.xyz;
+      gl_Position = projectionMatrix * viewMatrix * wp;
+    }`,
+  fragmentShader: `uniform float uTime, uAmbient, uIrradiance; varying vec2 vUv; varying vec3 vWorldP;
+    vec3 ironbow(float t){
+      t = clamp(t, 0.0, 1.0);
+      vec3 c0 = vec3(0.05, 0.0, 0.15); // Deep purple (cool)
+      vec3 c1 = vec3(0.45, 0.0, 0.65); // Magenta
+      vec3 c2 = vec3(0.95, 0.25, 0.05); // Amber / Orange
+      vec3 c3 = vec3(1.0, 0.92, 0.2);  // Bright Yellow
+      vec3 c4 = vec3(1.0, 1.0, 1.0);    // Hot White
+      if (t < 0.25) return mix(c0, c1, t * 4.0);
+      if (t < 0.55) return mix(c1, c2, (t - 0.25) * 3.33);
+      if (t < 0.85) return mix(c2, c3, (t - 0.55) * 3.33);
+      return mix(c3, c4, (t - 0.85) * 6.66);
+    }
+    void main(){
+      vec2 grid = fract(vUv * vec2(6.0, 10.0));
+      float busbar = smoothstep(0.04, 0.0, abs(grid.x - 0.5));
+      float hotspot = sin(vWorldP.x * 6.0 + uTime * 2.0) * cos(vWorldP.z * 5.0) * 0.15;
+      float baseTemp = uAmbient + (uIrradiance / 1000.0) * 28.0;
+      float cellTempNorm = clamp((baseTemp + hotspot * 15.0 + busbar * 8.0 - 20.0) / 60.0, 0.0, 1.0);
+      float contours = step(0.92, fract(cellTempNorm * 10.0));
+      vec3 col = ironbow(cellTempNorm) + vec3(contours * 0.15);
+      gl_FragColor = vec4(col, 1.0);
+    }`
+});
+
+/* 2. Aerodynamic 3D Wind Streamlines Simulation */
+const WIND_PTS = 160;
+const windGeo = new THREE.BufferGeometry();
+const windPos = new Float32Array(WIND_PTS * 3);
+const windSpeed = new Float32Array(WIND_PTS);
+const windSeed = new Float32Array(WIND_PTS * 3);
+const rMul = mulberry32(88);
+for (let i = 0; i < WIND_PTS; i++) {
+  windSeed[i*3] = (rMul() - 0.5) * 4.0;
+  windSeed[i*3+1] = rMul() * 1.5;
+  windSeed[i*3+2] = (rMul() - 0.5) * 4.0;
+  windSpeed[i] = 1.5 + rMul() * 2.5;
+  windPos[i*3] = windSeed[i*3]; windPos[i*3+1] = windSeed[i*3+1]; windPos[i*3+2] = windSeed[i*3+2];
+}
+windGeo.setAttribute('position', new THREE.BufferAttribute(windPos, 3));
+windGeo.setAttribute('aSpeed', new THREE.BufferAttribute(windSpeed, 1));
+windGeo.setAttribute('aSeed', new THREE.BufferAttribute(windSeed, 3));
+
+const windMat = new THREE.ShaderMaterial({
+  uniforms: { uTime: TIME, uAlpha: { value: 0 }, uPx: { value: renderer.getPixelRatio() * 9 } },
+  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  vertexShader: `uniform float uTime, uAlpha, uPx; attribute float aSpeed; attribute vec3 aSeed; varying vec3 vCol; varying float vA;
+    void main(){
+      float t = mod(uTime * aSpeed * 0.4 + aSeed.z, 5.0) - 2.5;
+      vec3 p = vec3(aSeed.x, aSeed.y + sin(t * 3.0 + aSeed.x) * 0.18 + 0.35, t);
+      // Deflect airflow smoothly over tilted array
+      if (abs(p.x) < 2.0 && abs(p.z) < 1.5) {
+        p.y += (1.5 - abs(p.z)) * 0.35;
+      }
+      vec4 mv = modelViewMatrix * vec4(p, 1.0);
+      gl_Position = projectionMatrix * mv;
+      gl_PointSize = uPx * clamp(2.2 / -mv.z, 0.4, 3.5);
+      float speedNorm = clamp((aSpeed - 1.5) / 2.5, 0.0, 1.0);
+      vCol = mix(vec3(0.2, 0.7, 1.0), vec3(1.0, 0.3, 0.4), speedNorm); // Blue = Laminar, Red = Lift/Turbulence
+      vA = smoothstep(2.5, 1.8, abs(t)) * uAlpha;
+    }`,
+  fragmentShader: `varying vec3 vCol; varying float vA;
+    void main(){
+      float d = length(gl_PointCoord - 0.5);
+      float a = smoothstep(0.5, 0.05, d) * vA;
+      gl_FragColor = vec4(vCol * a, a);
+    }`
+});
+const windParticles = new THREE.Points(windGeo, windMat);
+windParticles.frustumCulled = false;
+arr.add(windParticles);
+
+/* 3. 3D Floating Hologram Module HUDs */
+const hudSpritesGroup = new THREE.Group();
+arr.add(hudSpritesGroup);
+const hudSprites = [];
+
+function createHologramCanvas(kwText, vText, effText){
+  const c = document.createElement('canvas'); c.width = 256; c.height = 128;
+  const g = c.getContext('2d');
+  g.fillStyle = 'rgba(6, 15, 26, 0.88)';
+  chamferPath(g, 6, 6, 244, 116, 12);
+  g.fill();
+  g.strokeStyle = '#22ff88'; g.lineWidth = 3; g.stroke();
+  g.fillStyle = '#ffffff'; g.font = 'bold 28px sans-serif'; g.fillText(kwText, 18, 42);
+  g.fillStyle = '#94a3b8'; g.font = '18px sans-serif'; g.fillText(vText, 18, 72);
+  g.fillStyle = '#38bdf8'; g.font = 'bold 20px sans-serif'; g.fillText(effText, 18, 104);
+  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+function updateHologramHUDs(){
+  while (hudSpritesGroup.children.length > 0) {
+    const s = hudSpritesGroup.children[0];
+    if (s.material.map) s.material.map.dispose();
+    s.material.dispose();
+    hudSpritesGroup.remove(s);
+  }
+  hudSprites.length = 0;
+  if (!state.hologramHud || !state.placed) return;
+
+  const t = TYPES[state.typeIndex];
+  panels.forEach((p, idx) => {
+    const modWatts = Math.round(PANEL_AREA * t.eff * (SUN_STATE.dni / 1000) * 10);
+    const modVolts = (38.5 + (idx % 3) * 0.8).toFixed(1);
+    const tex = createHologramCanvas(`⚡ ${modWatts} W`, `${modVolts} V · ${(modWatts/modVolts).toFixed(1)} A`, `Eff: ${t.eff}%`);
+    const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, opacity: 0.95 });
+    const sprite = new THREE.Sprite(mat);
+    sprite.scale.set(0.65, 0.325, 1);
+    sprite.position.set(p.mesh.position.x, CFG.PANEL_YC + 0.45 + (idx % 2)*0.08, p.mesh.position.z);
+    hudSpritesGroup.add(sprite);
+    hudSprites.push(sprite);
+  });
+}
+
+/* 4. Interactive 3D Shading Obstacle Mesh (Draggable HVAC / Chimney Unit) */
+const obstacleGroup = new THREE.Group();
+obstacleGroup.visible = false;
+anchor.add(obstacleGroup);
+
+const obstacleBody = new THREE.Mesh(
+  new THREE.BoxGeometry(0.7, 0.9, 0.7),
+  new THREE.MeshStandardMaterial({ color: 0x4a5568, roughness: 0.6, metalness: 0.4 })
+);
+obstacleBody.castShadow = true; obstacleBody.receiveShadow = true;
+obstacleBody.position.set(1.8, 0.45, 1.2);
+obstacleGroup.add(obstacleBody);
+
+const obstacleTop = new THREE.Mesh(
+  new THREE.CylinderGeometry(0.25, 0.25, 0.2, 16),
+  new THREE.MeshStandardMaterial({ color: 0x2d3748, roughness: 0.5, metalness: 0.7 })
+);
+obstacleTop.position.set(1.8, 0.95, 1.2);
+obstacleTop.castShadow = true;
+obstacleGroup.add(obstacleTop);
+
+obstacleBody.userData = {
+  title: 'HVAC Shading Obstacle',
+  sub: 'Simulates rooftop shading interference',
+  desc: 'Casts real-time dynamic shadows across the solar string, recalculating bypass diode activation and string clipping losses.'
+};
+interactiveObjects.push(obstacleBody);
+
+/* 5. 5-Stop Cinematic Camera Tour Controller */
+const cineSplinePoints = [
+  new THREE.Vector3(0, 2.2, 4.2),    // Overview front
+  new THREE.Vector3(-3.2, 1.6, 1.8), // Low side angle
+  new THREE.Vector3(0, 0.8, -3.2),   // Rear bifacial view
+  new THREE.Vector3(2.8, 1.2, -0.5), // Inverter & conduit closeup
+  new THREE.Vector3(1.2, 3.5, 2.2)   // High solar incidence overhead
+];
+const cineCurve = new THREE.CatmullRomCurve3(cineSplinePoints, true);
+
+function updateCinematicTour(dt){
+  if (!state.cineTourActive) return;
+  state.cineTourT += dt * 0.07;
+  if (state.cineTourT >= 1.0) {
+    state.cineTourActive = false;
+    state.cineTourT = 0;
+    setToast('Cinematic Tour Complete', false, true, 2000);
+    return;
+  }
+  const u = state.cineTourT;
+  const camPos = cineCurve.getPointAt(u);
+  camera.position.lerp(camPos.clone().add(anchor.position), 0.1);
+  const lookTarget = anchor.position.clone().add(new THREE.Vector3(0, 0.5, 0));
+  camera.lookAt(lookTarget);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   11. SCAN VISUALS
+   ═══════════════════════════════════════════════════════════════════════════ */
+const scan = new THREE.Group(); scene.add(scan);
+const gridU = { uTime:TIME, uAlpha:{value:0} };
+const grid = new THREE.Mesh(new THREE.PlaneGeometry(4.4, 4.4, 56, 56).rotateX(-Math.PI/2), new THREE.ShaderMaterial({
+  uniforms: gridU, transparent:true, depthWrite:false, blending:THREE.AdditiveBlending,
+  vertexShader:`uniform float uTime; varying vec3 vW; varying vec2 vP;
+    void main(){ vec3 p=position; float d=length(p.xz); p.y += sin(d*7.0-uTime*3.0)*0.014*smoothstep(2.0,0.0,d);
+      vec4 w=modelMatrix*vec4(p,1.0); vW=w.xyz; vP=position.xz; gl_Position=projectionMatrix*viewMatrix*w; }`,
+  fragmentShader:`uniform float uTime,uAlpha; varying vec3 vW; varying vec2 vP;
+    void main(){ float d=length(vP);
+      vec2 g=vW.xz/0.25; vec2 gf=abs(fract(g-0.5)-0.5)/fwidth(g); float line=1.0-min(min(gf.x,gf.y),1.0);
+      vec2 g2=vW.xz; vec2 gf2=abs(fract(g2-0.5)-0.5)/fwidth(g2); float major=1.0-min(min(gf2.x,gf2.y),1.0);
+      float fade=smoothstep(2.1,0.4,d);
+      float ring=smoothstep(0.07,0.0,abs(d-mod(uTime*0.9,2.1)));
+      float a=(line*0.5+major*0.55+ring*0.9)*fade*uAlpha;
+      gl_FragColor=vec4(vec3(0.1,1.0,0.55)*a,a); }` }));
+grid.renderOrder = 4; scan.add(grid);
+
+const FP_N = 420, FP_R = 2.2;
+const fpSeed = new Float32Array(FP_N*2), fpPhase = new Float32Array(FP_N), fpPos = new Float32Array(FP_N*3);
+{ const r = mulberry32(7); for (let i = 0; i < FP_N; i++) { fpSeed[i*2] = r()*FP_R*2; fpSeed[i*2+1] = r()*FP_R*2; fpPhase[i] = r(); } }
+const fpGeo = new THREE.BufferGeometry();
+fpGeo.setAttribute('position', new THREE.BufferAttribute(fpPos, 3));
+fpGeo.setAttribute('aSeed', new THREE.BufferAttribute(fpSeed, 2));
+fpGeo.setAttribute('aPhase', new THREE.BufferAttribute(fpPhase, 1));
+const fpU = { uCenter:{value:new THREE.Vector3()}, uTime:TIME, uR:{value:FP_R}, uPx:{value:renderer.getPixelRatio()*9}, uAlpha:{value:0} };
+const featurePts = new THREE.Points(fpGeo, new THREE.ShaderMaterial({
+  uniforms: fpU, transparent:true, depthWrite:false, blending:THREE.AdditiveBlending,
+  vertexShader:`uniform vec3 uCenter; uniform float uTime,uR,uPx; attribute vec2 aSeed; attribute float aPhase; varying float vA;
+    void main(){ vec2 rel=mod(aSeed-uCenter.xz+uR, 2.0*uR)-uR;
+      vec3 p=vec3(uCenter.x+rel.x, uCenter.y+0.006+0.03*fract(aPhase*7.0), uCenter.z+rel.y);
+      float pulse=0.55+0.45*sin(uTime*3.2+aPhase*6.2831);
+      vec4 mv=viewMatrix*vec4(p,1.0); gl_Position=projectionMatrix*mv;
+      gl_PointSize=uPx*(0.35+pulse)*clamp(2.2/-mv.z,0.4,3.0);
+      vA=smoothstep(uR,uR*0.35,length(rel))*(0.4+0.6*pulse); }`,
+  fragmentShader:`uniform float uAlpha; varying float vA;
+    void main(){ float d=length(gl_PointCoord-0.5); float a=smoothstep(0.5,0.08,d)*vA*uAlpha; gl_FragColor=vec4(vec3(0.2,1.0,0.5)*a,a); }` }));
+featurePts.frustumCulled = false; featurePts.renderOrder = 6; scene.add(featurePts);
+
+const reticle = new THREE.Mesh(new THREE.RingGeometry(0.09, 0.11, 48).rotateX(-Math.PI/2),
+  new THREE.MeshBasicMaterial({ color:0x22ff88, transparent:true, opacity:.95, depthWrite:false }));
+reticle.renderOrder = 7; scan.add(reticle);
+const retDot = new THREE.Mesh(new THREE.CircleGeometry(0.018, 16).rotateX(-Math.PI/2), reticle.material); reticle.add(retDot);
+
+// Holographic Ghost Solar Panel Array (Real-time live preview during scanning)
+const ghostArray = new THREE.Group(); ghostArray.visible = false; scene.add(ghostArray);
+function buildGhostArray() {
+  while (ghostArray.children.length > 0) {
+    const c = ghostArray.children[0];
+    if (c.geometry) c.geometry.dispose();
+    ghostArray.remove(c);
+  }
+  const P = CFG.PANEL, th = CFG.TILT;
+  const ghostMat = new THREE.MeshBasicMaterial({ color: 0x00ffcc, transparent: true, opacity: 0.35, depthWrite: false });
+  const wireMat = new THREE.LineBasicMaterial({ color: 0x22ff88, transparent: true, opacity: 0.85 });
+
+  for (let r = 0; r < CFG.ROWS; r++) {
+    const rowZ = (r - (CFG.ROWS - 1) / 2) * CFG.ROW_PITCH;
+    for (let c = 0; c < CFG.COLS; c++) {
+      const colX = (c - (CFG.COLS - 1) / 2) * CFG.COL_PITCH;
+      const boxGeo = new THREE.BoxGeometry(P.w, 0.02, P.l);
+      const m = new THREE.Mesh(boxGeo, ghostMat);
+      m.position.set(colX, CFG.PANEL_YC, rowZ);
+      m.rotation.x = th;
+      ghostArray.add(m);
+
+      const edges = new THREE.LineSegments(new THREE.EdgesGeometry(boxGeo), wireMat);
+      edges.position.copy(m.position); edges.rotation.copy(m.rotation);
+      ghostArray.add(edges);
+    }
+  }
+}
+buildGhostArray();
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   12. APP STATE & UI REFERENCES
+   ═══════════════════════════════════════════════════════════════════════════ */
+const roofMat = new THREE.LineDashedMaterial({ color:0x4fd8ff, dashSize:.25, gapSize:.15, transparent:true, opacity:.9 });
+
+const el = {
+  start:$('#start'), startBtn:$('#startBtn'), retryBtn:$('#retryBtn'), demoBtn:$('#demoBtn'), startMsg:$('#startMsg'),
+  stepCam:$('#stepCam'), stepXR:$('#stepXR'), toast:$('#toast'), toastText:$('#toastText'), toastSpin:$('#toastSpin'),
+  fab:$('#fab'), sheet:$('#sheet'), carousel:$('#carousel'), legacy:$('#legacyBadge'), fitChip:$('#fitChip'),
+  modeChip:$('#modeChip'), resetBtn:$('#resetBtn'), roofChip:$('#roofChip'), rot:$('#rotBtns'),
+  dTitle:$('#dTitle'), dMatch:$('#dMatch'), dBar:$('#dBar'), dText:$('#dText'), dEff:$('#dEff'), dKw:$('#dKw'), dYield:$('#dYield'),
+  dSurfaceChip:$('#dSurfaceChip'), aiRankChip:$('#aiRankChip'), aiSheetBadge:$('#aiSheetBadge'),
+  cam:$('#cam'), coachCard:$('#coachCard'), coachDismiss:$('#coachDismiss'),
+  sensorsBtn:$('#sensorsBtn'), sensorsModal:$('#sensorsModal'), closeSensorsBtn:$('#closeSensorsBtn'),
+  settingsBtn:$('#settingsBtn'), sheetExpanded:$('#sheetExpanded'), sheetHandle:$('#sheetHandle'), sheetToggleText:$('#sheetToggleText'),
+  sunMatchBar:$('#sunMatchBar'), sunMatchBtn:$('#sunMatchBtn'), sunMatchText:$('#sunMatchText'),
+  timeSlider:$('#timeSlider'), timeVal:$('#timeVal'), noonBtn:$('#noonBtn'), liveTimeBtn:$('#liveTimeBtn'),
+  snapAzimuthWrap:$('#snapAzimuthWrap'), snapAzimuthBtn:$('#snapAzimuthBtn'), snapAzimuthSub:$('#snapAzimuthSub'),
+  hapticsToggle:$('#hapticsToggle'), energyBeamsToggle:$('#energyBeamsToggle'),
+  aiAdvisorBtn:$('#aiAdvisorBtn'), aiModal:$('#aiModal'), closeAiModalBtn:$('#closeAiModalBtn'),
+  aiTopName:$('#aiTopName'), aiTopScore:$('#aiTopScore'), aiTopReasons:$('#aiTopReasons'),
+  aiRankingsList:$('#aiRankingsList'), aiAlbedoReadout:$('#aiAlbedoReadout'), aiApplyBtn:$('#aiApplyBtn'),
+  layoutBtn:$('#layoutBtn'), layoutModal:$('#layoutModal'), closeLayoutBtn:$('#closeLayoutBtn'),
+  colSlider:$('#colSlider'), rowSlider:$('#rowSlider'), tiltSlider:$('#tiltSlider'), pitchSlider:$('#pitchSlider'),
+  colVal:$('#colVal'), rowVal:$('#rowVal'), tiltVal:$('#tiltVal'), pitchVal:$('#pitchVal'),
+  builderTotalPanels:$('#builderTotalPanels'), builderTotalKw:$('#builderTotalKw'), builderTotalArea:$('#builderTotalArea'), builderFitStatus:$('#builderFitStatus'),
+  roiBtn:$('#roiBtn'), roiModal:$('#roiModal'), closeRoiBtn:$('#closeRoiBtn'),
+  roiBillSlider:$('#roiBillSlider'), roiBillVal:$('#roiBillVal'), roiTotalSavings:$('#roiTotalSavings'), roiPayback:$('#roiPayback'), roiCarbon:$('#roiCarbon'), roiTrees:$('#roiTrees'),
+  snapshotBtn:$('#snapshotBtn'), snapshotModal:$('#snapshotModal'), closeSnapshotBtn:$('#closeSnapshotBtn'), snapshotImg:$('#snapshotImg'), downloadSnapshotBtn:$('#downloadSnapshotBtn'),
+  inspectorCard:$('#inspectorCard'), closeInspectBtn:$('#closeInspectBtn'), inspectIcon:$('#inspectIcon'), inspectTitle:$('#inspectTitle'), inspectSub:$('#inspectSub'), inspectDesc:$('#inspectDesc'), explodeViewBtn:$('#explodeViewBtn'),
+  advancedFxBar:$('#advancedFxBar'), thermalModeBtn:$('#thermalModeBtn'), thermalBtnLabel:$('#thermalBtnLabel'),
+  windModeBtn:$('#windModeBtn'), windBtnLabel:$('#windBtnLabel'), hologramHudBtn:$('#hologramHudBtn'), hologramBtnLabel:$('#hologramBtnLabel'),
+  obstacleBtn:$('#obstacleBtn'), obstacleBtnLabel:$('#obstacleBtnLabel'), cineTourBtn:$('#cineTourBtn'),
+  camGuideHud:$('#camGuideHud'), toggleAutoFixBtn:$('#toggleAutoFixBtn'),
+  camPitchVal:$('#camPitchVal'), camDistVal:$('#camDistVal'), camLuxVal:$('#camLuxVal'),
+  camGuideHint:$('#camGuideHint'), instantSnapBtn:$('#instantSnapBtn'), repositionBtn:$('#repositionBtn')
+};
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   13. CAROUSEL & ANALYTICS
+   ═══════════════════════════════════════════════════════════════════════════ */
+TYPES.forEach((t, i) => {
+  const b = document.createElement('button');
+  b.className = 'card snap-center shrink-0 w-[10.5rem] rounded-2xl border border-white/15 bg-white/5 p-2.5 text-left';
+  b.dataset.i = i;
+  b.innerHTML = `<div class="h-14 rounded-xl border border-white/10" style="background:${t.sw}"></div>
+    <div class="text-white text-[13px] font-semibold mt-2 leading-tight">${t.name}</div>
+    <div class="text-slate-400 text-[11px] mt-0.5">${t.tag}</div>`;
+  b.addEventListener('click', () => { b.scrollIntoView({ behavior:'smooth', inline:'center', block:'nearest' }); });
+  el.carousel.appendChild(b);
+});
+const cards = [...el.carousel.children];
+let scrollT = 0;
+el.carousel.addEventListener('scroll', () => {
+  clearTimeout(scrollT);
+  scrollT = setTimeout(() => {
+    const rc = el.carousel.getBoundingClientRect(), cx = rc.left + rc.width/2;
+    let best = 0, bd = 1e9;
+    cards.forEach((c, i) => {
+      const r = c.getBoundingClientRect(); const d = Math.abs(r.left + r.width/2 - cx);
+      if (d < bd) { bd = d; best = i; }
+    });
+    selectType(best);
+  }, 70);
+}, { passive:true });
+
+function retrigger(node, delay = 0){
+  node.classList.remove('slide-up'); void node.offsetWidth; node.style.animationDelay = delay + 'ms'; node.classList.add('slide-up');
+}
+function animateCountUp(node, startVal, endVal, suffix = '', duration = 600){
+  const startTime = performance.now();
+  function update(now){
+    const p = clamp((now - startTime) / duration);
+    const cur = Math.round(startVal + (endVal - startVal) * easeInOutCubic(p));
+    node.textContent = cur + suffix;
+    if (p < 1) requestAnimationFrame(update);
+  }
+  requestAnimationFrame(update);
+}
+
+function runAIDecisionAnalysis(){
+  const result = aiSolarEngine.evaluate(TYPES, {
+    surface: CFG.SURFACE,
+    ambientTemp: SUN_STATE.temp,
+    irradiance: SUN_STATE.dni,
+    diffuseRadiation: SUN_STATE.diffuse,
+    cloudCover: SUN_STATE.cloudCover,
+    latitude: SUN_STATE.lat
+  });
+  latestAiEvaluation = result;
+
+  el.aiTopName.textContent = result.topRecommendation.name;
+  el.aiTopScore.textContent = `${result.topRecommendation.matchRating}%`;
+  el.aiTopReasons.innerHTML = result.topRecommendation.reasons.map(r => `<div class="flex items-start gap-1.5"><span class="text-emerald-400 font-bold">✓</span><span>${r}</span></div>`).join('');
+  el.aiSheetBadge.textContent = `🤖 AI: ${result.topRecommendation.name.split(' ')[0]} #1`;
+
+  const surfLabels = { concrete:'0.20 (Grey Concrete)', white_membrane:'0.78 (White TPO)', gravel:'0.25 (Gravel)', metal_zinc:'0.35 (Metal Roof)' };
+  el.aiAlbedoReadout.textContent = `Albedo: ${surfLabels[CFG.SURFACE] || '0.20'}`;
+  el.dSurfaceChip.textContent = `Surface: ${CFG.SURFACE === 'white_membrane' ? 'White TPO Roof' : CFG.SURFACE.charAt(0).toUpperCase() + CFG.SURFACE.slice(1)} ▾`;
+
+  el.aiRankingsList.innerHTML = result.rankedPanels.map((p, idx) => {
+    const isTop = idx === 0;
+    const isSelected = p.index === state.typeIndex;
+    return `
+      <div class="p-2.5 rounded-xl border ${isSelected ? 'border-emerald-400 bg-emerald-500/15' : 'border-white/5 bg-white/5'}">
+        <div class="flex items-center justify-between mb-1">
+          <div class="flex items-center gap-1.5">
+            <span class="font-bold ${isTop ? 'text-emerald-400' : 'text-slate-300'}">#${idx+1}</span>
+            <span class="font-semibold text-white">${p.name}</span>
+            ${isTop ? '<span class="chip text-[9px] text-emerald-300 border-emerald-400/40">★ AI Best Pick</span>' : ''}
+          </div>
+          <span class="font-extrabold text-sm ${p.matchRating >= 80 ? 'text-emerald-400' : p.matchRating >= 60 ? 'text-amber-300' : 'text-rose-400'}">${p.matchRating}%</span>
+        </div>
+        <div class="h-1 rounded-full bg-white/10 overflow-hidden mb-1.5">
+          <div class="h-full rounded-full ${p.matchRating >= 80 ? 'bg-emerald-400' : p.matchRating >= 60 ? 'bg-amber-400' : 'bg-rose-400'}" style="width:${p.matchRating}%"></div>
+        </div>
+        <div class="flex items-center justify-between text-[10px] text-slate-400">
+          <span>Thermal derating: -${p.thermalLoss}%</span>
+          <span>Rear backside gain: +${p.rearGain}%</span>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  return result;
+}
+
+function renderAnalytics(i){
+  const t = TYPES[i];
+  cards.forEach((c, k) => c.classList.toggle('on', k === i));
+  const col = t.match >= 90 ? '#22ff88' : t.match >= 55 ? '#ffc933' : '#ff4d6d';
+  el.dTitle.textContent = t.name;
+  el.dMatch.style.color = col;
+  animateCountUp(el.dMatch, 0, t.match, '%');
+  el.dBar.style.width = t.match + '%'; el.dBar.style.background = col;
+  el.dText.textContent = t.text;
+  el.dEff.textContent = `Efficiency ≈ ${t.eff}%`;
+  const kwp = (CFG.COLS * CFG.ROWS * PANEL_AREA * t.eff / 100).toFixed(1);
+  el.dKw.textContent = `${CFG.COLS*CFG.ROWS} panels ≈ ${kwp} kWp`;
+
+  const estHours = SUN_STATE.isNight ? 4.8 : clamp(SUN_STATE.dni / 200, 3.5, 6.0);
+  const dailyKwh = (kwp * estHours * 0.80).toFixed(1);
+  if (el.dYield) el.dYield.textContent = `Est. yield today: ~${dailyKwh} kWh`;
+  const yieldSummary = $('#sheetYieldSummary');
+  if (yieldSummary) yieldSummary.textContent = `${kwp} kWp · ~${dailyKwh} kWh/day`;
+
+  if (latestAiEvaluation && latestAiEvaluation.topRecommendation.index === i) {
+    el.aiRankChip.classList.remove('hidden');
+  } else {
+    el.aiRankChip.classList.add('hidden');
+  }
+
+  [el.dTitle, el.dMatch, el.dText, el.dEff, el.dKw, el.dYield].forEach((n, k) => { if(n) retrigger(n, k * 45); });
+  if (t.legacy) {
+    el.legacy.classList.remove('hidden', 'badge'); void el.legacy.offsetWidth; el.legacy.classList.add('badge');
+  } else el.legacy.classList.add('hidden');
+
+  updateBuilderStats();
+  updateRoiCalculations();
+}
+
+function updateBuilderStats(){
+  const totalPanels = CFG.COLS * CFG.ROWS;
+  const t = TYPES[state.typeIndex];
+  const kwp = (totalPanels * PANEL_AREA * t.eff / 100).toFixed(1);
+  const area = (totalPanels * PANEL_AREA).toFixed(1);
+  el.builderTotalPanels.textContent = `${totalPanels} Modules`;
+  el.builderTotalKw.textContent = `${kwp} kWp`;
+  el.builderTotalArea.textContent = `${area} m²`;
+  el.builderFitStatus.textContent = state.collide ? '⚠ Exceeds Perimeter' : '✓ Safe Fit';
+  el.builderFitStatus.className = state.collide ? 'text-rose-400 font-bold' : 'text-emerald-300 font-bold';
+}
+
+function updateRoiCalculations(){
+  const bill = parseFloat(el.roiBillSlider.value);
+  el.roiBillVal.textContent = `$${bill} / mo`;
+  const totalPanels = CFG.COLS * CFG.ROWS;
+  const kwp = (totalPanels * PANEL_AREA * TYPES[state.typeIndex].eff / 100);
+  const annualKwh = kwp * 1550 * 0.8;
+  const annualSavings = Math.min(bill * 12 * 0.85, annualKwh * 0.22);
+  const systemCost = kwp * 1800;
+  const net25YrSavings = Math.round(annualSavings * 25 - systemCost);
+  const paybackYears = (systemCost / (annualSavings || 1)).toFixed(1);
+  const carbonTons = Math.round(annualKwh * 25 * 0.0004);
+  const trees = Math.round(carbonTons * 16.5);
+
+  el.roiTotalSavings.textContent = `$${Math.max(1000, net25YrSavings).toLocaleString()}`;
+  el.roiPayback.textContent = `${clamp(paybackYears, 2.5, 9.0)} Years`;
+  el.roiCarbon.textContent = `${carbonTons} Tons`;
+  el.roiTrees.textContent = `${trees.toLocaleString()} mature trees`;
+}
+
+function setToast(text, spin = true, show = true, autoDismissMs = 3500){
+  clearTimeout(toastTimeout);
+  el.toast.classList.toggle('hidden', !show);
+  el.toastText.textContent = text;
+  el.toastSpin.style.display = spin ? 'block' : 'none';
+  if (show && autoDismissMs > 0 && !spin) {
+    toastTimeout = setTimeout(() => { el.toast.classList.add('hidden'); }, autoDismissMs);
+  }
+}
+
+function setFitUI(collide){
+  el.fitChip.classList.remove('hidden');
+  if (collide) {
+    el.fitChip.className = 'rounded-full px-4 py-1.5 text-xs sm:text-sm font-semibold backdrop-blur-md warn';
+    el.fitChip.style.cssText = 'background:rgba(255,31,77,.28);color:#ffd5de;border:1px solid rgba(255,31,77,.7)';
+    el.fitChip.textContent = '⚠ Array exceeds roof boundary';
+  } else {
+    el.fitChip.className = 'rounded-full px-4 py-1.5 text-xs sm:text-sm font-semibold backdrop-blur-md';
+    el.fitChip.style.cssText = 'background:rgba(255,255,255,.2);color:#c8ffe0;border:1px solid rgba(25,255,122,.6)';
+    el.fitChip.textContent = '✓ Perfect fit inside perimeter';
+  }
+}
+function showMsg(msg){ el.startMsg.textContent = msg; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   14. HARDWARE DETECTION & PERMISSIONS
+   ═══════════════════════════════════════════════════════════════════════════ */
+let xrSupported = false, camOK = false;
+let compassHeading = 0;
+
+const lumaCanvas = document.createElement('canvas');
+lumaCanvas.width = 16; lumaCanvas.height = 16;
+const lumaCtx = lumaCanvas.getContext('2d');
+let lastLumaTime = 0;
+
+function sampleCameraLuma(){
+  if (state.mode !== 'fallback' || !el.cam || el.cam.readyState < 2) return;
+  const now = performance.now();
+  if (now - lastLumaTime < 500) return;
+  lastLumaTime = now;
+  try {
+    lumaCtx.drawImage(el.cam, 0, 0, 16, 16);
+    const id = lumaCtx.getImageData(0, 0, 16, 16).data;
+    let sum = 0;
+    for (let i = 0; i < id.length; i += 4) {
+      sum += (0.299 * id[i] + 0.587 * id[i+1] + 0.114 * id[i+2]);
+    }
+    const avgLuma = sum / (16 * 16 * 255);
+    renderer.toneMappingExposure = clamp(0.75 + avgLuma * 0.6, 0.6, 1.4);
+  } catch {}
+}
+
+async function requestCamera(){
+  el.retryBtn.classList.add('hidden'); el.demoBtn.classList.add('hidden'); showMsg('');
+  el.stepCam.textContent = 'Camera: requesting…';
+  if (!window.isSecureContext) {
+    el.stepCam.textContent = 'Camera: blocked (HTTPS needed)';
+    showMsg('Camera and WebXR require HTTPS or localhost.');
+    el.demoBtn.classList.remove('hidden'); return false;
+  }
+  if (!navigator.mediaDevices?.getUserMedia) {
+    el.stepCam.textContent = 'Camera: unsupported';
+    showMsg('This browser does not expose camera access.');
+    el.demoBtn.classList.remove('hidden'); return false;
+  }
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode: { ideal: 'environment' },
+        width: { ideal: 1920, min: 1280 },
+        height: { ideal: 1080, min: 720 },
+        frameRate: { ideal: 60, min: 30 }
+      },
+      audio: false
+    });
+    el.stepCam.textContent = 'Camera: 1080p HDR ready ✓';
+    el.stepCam.style.color = '#86efac';
+    camOK = true;
+    return true;
+  } catch (err) {
+    el.stepCam.textContent = 'Camera: unavailable';
+    showMsg('Camera access was not granted. Tap Retry or use Demo Mode.');
+    el.retryBtn.classList.remove('hidden'); el.demoBtn.classList.remove('hidden');
+    return false;
+  }
+}
+
+async function detect(){
+  try { xrSupported = !!(navigator.xr && await navigator.xr.isSessionSupported('immersive-ar')); } catch { xrSupported = false; }
+  el.stepXR.textContent = xrSupported ? 'WebXR AR: supported ✓' : 'WebXR: fallback mode';
+  if (xrSupported) el.stepXR.style.color = '#86efac';
+  $('#sensorCam').textContent = xrSupported ? 'WebXR ARCore (Primary)' : 'getUserMedia Rear Camera';
+  $('#sensorPose').textContent = xrSupported ? 'WebXR 6-DoF SLAM' : 'DeviceOrientation Gyro Look';
+  $('#sensorSurface').textContent = xrSupported ? 'WebXR Hit-Test + Planes' : 'Virtual Floor Plane';
+  $('#sensorLight').textContent = xrSupported ? 'XRLightProbe / Video Luma' : 'Camera Luma 16×16 Average';
+}
+el.retryBtn.onclick = async () => { await requestCamera(); };
+
+function initCompassHeading(){
+  if ('ondeviceorientationabsolute' in window) {
+    window.addEventListener('deviceorientationabsolute', (e) => {
+      if (e.alpha !== null) {
+        compassHeading = 360 - e.alpha;
+        SUN_STATE.compassOffset = compassHeading;
+        $('#sensorHeading').textContent = `Android Absolute Compass (${Math.round(compassHeading)}°)`;
+      }
+    }, true);
+  } else {
+    window.addEventListener('deviceorientation', (e) => {
+      if (e.webkitCompassHeading != null) {
+        compassHeading = e.webkitCompassHeading;
+        SUN_STATE.compassOffset = compassHeading;
+        $('#sensorHeading').textContent = `iOS Compass (${Math.round(compassHeading)}°)`;
+      }
+    }, true);
+  }
+}
+
+async function requestCoarseLocation(){
+  setToast('Requesting approximate location (~1 km)…', true, true);
+  if (!navigator.geolocation) {
+    setToast('Geolocation unavailable — using timezone sunlight.', false, true, 3500);
+    return;
+  }
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      const lat = parseFloat(pos.coords.latitude.toFixed(2));
+      const lon = parseFloat(pos.coords.longitude.toFixed(2));
+      SUN_STATE.lat = lat; SUN_STATE.lon = lon;
+      $('#sensorLocation').textContent = `Coarse GPS (${lat}°, ${lon}°)`;
+      el.sunMatchText.textContent = `Sun matched (${lat}° N)`;
+      setToast(`Sun aligned to physical coordinates (${lat}° N).`, false, true, 3500);
+      buildSunArc(lat, lon, new Date(), SUN_STATE.compassOffset);
+      fetchOpenMeteoWeather(lat, lon);
+      updateSunLighting();
+    },
+    (err) => {
+      console.warn('Geolocation denied/timeout:', err.message);
+      setToast('Location denied — using timezone solar estimate.', false, true, 3500);
+      $('#sensorLocation').textContent = 'Timezone Estimate (No GPS)';
+    },
+    { enableHighAccuracy: false, timeout: 5000, maximumAge: 600000 }
+  );
+}
+el.sunMatchBtn.onclick = requestCoarseLocation;
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   15. START SESSION & SURFACE DETECTION
+   ═══════════════════════════════════════════════════════════════════════════ */
+const gyro = { q:new THREE.Quaternion(), has:false, a0:null };
+const _e = new THREE.Euler(), _q1 = new THREE.Quaternion(-Math.sqrt(.5), 0, 0, Math.sqrt(.5)), _q0 = new THREE.Quaternion(), _z = new THREE.Vector3(0,0,1);
+function onOrient(e){
+  if (e.alpha == null) return; if (gyro.a0 === null) gyro.a0 = e.alpha; gyro.has = true;
+  const d = THREE.MathUtils.degToRad, o = screen.orientation?.angle || 0;
+  _e.set(d(e.beta), d(e.alpha - gyro.a0), -d(e.gamma), 'YXZ');
+  gyro.q.setFromEuler(_e).multiply(_q1).multiply(_q0.setFromAxisAngle(_z, -d(o)));
+}
+async function enableGyro(){
+  try {
+    if (typeof DeviceOrientationEvent !== 'undefined' && DeviceOrientationEvent.requestPermission) {
+      const r = await DeviceOrientationEvent.requestPermission(); if (r !== 'granted') return;
+    }
+  } catch {}
+  window.addEventListener('deviceorientation', onOrient, true);
+}
+
+function enterScanning(){
+  sfx.init();
+  el.start.classList.add('hidden'); state.placed = false; state.validT = 0; state.scanDuration = 0;
+  el.fab.classList.remove('hidden'); el.sunMatchBar.classList.remove('hidden');
+  setToast('Scanning surface… Pan your phone across the roof.', true, true);
+  initCompassHeading();
+  buildSunArc(SUN_STATE.lat, SUN_STATE.lon, new Date(), SUN_STATE.compassOffset);
+  updateSunLighting();
+  runAIDecisionAnalysis();
+}
+
+async function startXR(){
+  if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+  const session = await navigator.xr.requestSession('immersive-ar', {
+    requiredFeatures:['hit-test'],
+    optionalFeatures:['dom-overlay','plane-detection','local-floor','light-estimation'],
+    domOverlay:{ root: $('#ui') }
+  });
+  await renderer.xr.setSession(session);
+  state.mode = 'xr'; document.body.classList.add('xr'); el.cam.classList.add('hidden'); canvas.style.display = 'none';
+  el.modeChip.textContent = 'WebXR · hit-test' + (session.enabledFeatures?.includes('plane-detection') ? ' + planes' : '');
+  session.addEventListener('end', () => {
+    hitTestSource = null; hitTestRequested = false; state.mode = 'idle'; document.body.classList.remove('xr'); canvas.style.display = 'block';
+    resetAll(); el.start.classList.remove('hidden'); detect();
+  });
+  enterScanning();
+}
+
+async function startFallback(withCam){
+  state.mode = 'fallback';
+  if (withCam) {
+    if (!stream) await requestCamera();
+    if (stream) { el.cam.srcObject = stream; el.cam.classList.remove('hidden'); try { await el.cam.play(); } catch {} }
+  } else {
+    document.body.style.background = 'linear-gradient(#15202b,#080d14)';
+  }
+  await enableGyro();
+  el.modeChip.textContent = withCam ? 'Camera fallback · Gyro look' : 'Demo mode · Orbit look';
+  el.rot.classList.remove('hidden'); el.rot.classList.add('flex');
+  enterScanning();
+}
+
+el.startBtn.onclick = async () => {
+  el.startBtn.disabled = true;
+  try {
+    if (xrSupported) {
+      try { await startXR(); return; } catch (e) {
+        console.warn('XR start failed, using fallback:', e);
+        showMsg('WebXR could not start — switching to camera fallback.');
+      }
+    }
+    const ok = await requestCamera();
+    await startFallback(ok);
+  } finally { el.startBtn.disabled = false; }
+};
+el.demoBtn.onclick = () => startFallback(false);
+
+const _m4 = new THREE.Matrix4(), _p = new THREE.Vector3(), _qq = new THREE.Quaternion(), _s = new THREE.Vector3(), _up = new THREE.Vector3();
+const floorPlane = new THREE.Plane(new THREE.Vector3(0,1,0), 0), _ray = new THREE.Raycaster(), _hit = new THREE.Vector3();
+
+function xrUpdate(frame){
+  const refSpace = renderer.xr.getReferenceSpace(), session = renderer.xr.getSession();
+  if (!hitTestRequested) {
+    hitTestRequested = true;
+    session.requestReferenceSpace('viewer')
+      .then(vs => session.requestHitTestSource({ space: vs }))
+      .then(src => { hitTestSource = src; })
+      .catch(console.warn);
+  }
+  reticleValid = false;
+  if (hitTestSource && !state.placed) {
+    const res = frame.getHitTestResults(hitTestSource);
+    if (res.length) {
+      const pose = res[0].getPose(refSpace);
+      if (pose) {
+        _m4.fromArray(pose.transform.matrix).decompose(_p, _qq, _s);
+        _up.set(0,1,0).applyQuaternion(_qq);
+        if (_up.y > 0.85) { reticlePos.copy(_p); reticleValid = true; }
+      }
+    }
+  }
+  if (frame.detectedPlanes && !state.placed && (++planeTick % 12 === 0)) {
+    const out = [];
+    frame.detectedPlanes.forEach(pl => {
+      if (pl.orientation !== 'horizontal') return;
+      const pose = frame.getPose(pl.planeSpace, refSpace); if (!pose) return;
+      _m4.fromArray(pose.transform.matrix);
+      const poly = pl.polygon.map(q => { const v = new THREE.Vector3(q.x, q.y, q.z).applyMatrix4(_m4); return new THREE.Vector2(v.x, v.z); });
+      out.push({ poly, area: polyArea(poly) });
+    });
+    detectedPlanes = out;
+  }
+}
+
+function fallbackUpdate(){
+  sampleCameraLuma();
+  if (state.mode === 'fallback') {
+    if (gyro.has) camera.quaternion.copy(gyro.q); else camera.lookAt(0, 0, -3);
+  } else camera.lookAt(0, 0, -3);
+  if (state.placed) { reticleValid = false; return; }
+
+  _ray.setFromCamera(new THREE.Vector2(0, 0), camera);
+  let hitFound = !!_ray.ray.intersectPlane(floorPlane, _hit) && _hit.distanceTo(camera.position) < 16 && _hit.distanceTo(camera.position) > 0.6;
+
+  // Intelligent adaptive ground projection for instant locking regardless of device tilt:
+  if (!hitFound) {
+    const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+    fwd.y = 0;
+    if (fwd.lengthSq() < 0.001) fwd.set(0, 0, -1);
+    fwd.normalize().multiplyScalar(2.8);
+    _hit.set(camera.position.x + fwd.x, state.floorY || 0, camera.position.z + fwd.z);
+    hitFound = true;
+  }
+
+  reticleValid = hitFound;
+  if (reticleValid) {
+    reticlePos.lerp(_hit, 0.45);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   16. PLACEMENT & ROOF BOUNDARY
+   ═══════════════════════════════════════════════════════════════════════════ */
+function buildRoof(){
+  let poly = null;
+  if (roofSource === 'plane') {
+    const cands = detectedPlanes.filter(p => pointInPoly(anchor.position.x, anchor.position.z, p.poly) && p.area > 1.0).sort((a,b) => b.area - a.area);
+    if (cands.length) poly = cands[0].poly; else roofSource = 'virtual';
+  }
+  if (!poly) {
+    const { w, d } = CFG.ROOF_DEFAULT, c = Math.cos(state.yaw), s = Math.sin(state.yaw);
+    poly = [[-w/2,-d/2],[w/2,-d/2],[w/2,d/2],[-w/2,d/2]].map(([x,z]) => new THREE.Vector2(anchor.position.x + x*c + z*s, anchor.position.z - x*s + z*c));
+  }
+  roofPoly = poly;
+  if (roofLine) { scene.remove(roofLine); roofLine.geometry.dispose(); }
+  const pts = poly.map(p => new THREE.Vector3(p.x, state.floorY + 0.015, p.y));
+  roofLine = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(pts), roofMat);
+  roofLine.computeLineDistances();
+  scene.add(roofLine);
+  el.roofChip.classList.remove('hidden');
+  el.roofChip.textContent = roofSource === 'plane' ? '◫ Roof: detected plane' : `◫ Roof: virtual ${CFG.ROOF_DEFAULT.w}×${CFG.ROOF_DEFAULT.d} m`;
+}
+el.roofChip.onclick = () => {
+  if (!state.placed) return;
+  roofSource = (roofSource === 'virtual' && detectedPlanes.length) ? 'plane' : 'virtual';
+  buildRoof();
+};
+
+function place(){
+  if (state.placed) return;
+  state.surfaceOk = true;
+  state.placed = true;
+  state.floorY = reticlePos.y;
+  anchor.position.copy(reticlePos);
+  anchor.visible = true;
+  if (ghostArray) ghostArray.visible = false;
+  if (el.camGuideHud) el.camGuideHud.classList.add('hidden');
+
+  const dir = new THREE.Vector3();
+  (renderer.xr.isPresenting ? renderer.xr.getCamera() : camera).getWorldDirection(dir);
+  state.yaw = Math.atan2(-dir.x, -dir.z); spin.rotation.y = state.yaw;
+  floorPlane.constant = -state.floorY;
+  roofSource = detectedPlanes.some(p => p.area > 1 && pointInPoly(reticlePos.x, reticlePos.z, p.poly)) ? 'plane' : 'virtual';
+  buildRoof();
+
+  TL.phase = 'reveal'; TL.t = 0; TL.R = 0; field.visible = true;
+  if (sfx) { sfx.playImpact(); sfx.playWhoosh(); }
+  el.fab.classList.add('hidden');
+  if (el.repositionBtn) el.repositionBtn.classList.remove('hidden');
+  setToast('⚡ Solar Array Instant-Locked! Assembling 1:1 scale…', false, true, 3000);
+  el.sheet.classList.remove('hidden'); el.resetBtn.classList.remove('hidden');
+  if (el.advancedFxBar) el.advancedFxBar.classList.remove('hidden');
+  el.rot.classList.toggle('hidden', state.mode !== 'fallback');
+  el.snapAzimuthWrap.classList.remove('hidden');
+
+  runAIDecisionAnalysis();
+  selectType(0, true); renderAnalytics(0); cards[0].scrollIntoView({ inline:'center', block:'nearest' });
+  setFitUI(false);
+  updateSunLighting();
+}
+el.fab.onclick = place;
+if (el.instantSnapBtn) el.instantSnapBtn.onclick = place;
+
+function repositionArray(){
+  state.placed = false; state.surfaceOk = false;
+  anchor.visible = false; field.visible = false;
+  TL.phase = 'none'; TL.R = 0;
+  if (el.repositionBtn) el.repositionBtn.classList.add('hidden');
+  el.fab.classList.remove('hidden');
+  if (el.camGuideHud) el.camGuideHud.classList.remove('hidden');
+  el.sheet.classList.add('hidden');
+  setToast('Pan camera across roof to new position and tap to fix.', true, true);
+}
+if (el.repositionBtn) el.repositionBtn.onclick = repositionArray;
+if (el.toggleAutoFixBtn) {
+  el.toggleAutoFixBtn.onclick = () => {
+    state.autoFix = !state.autoFix;
+    el.toggleAutoFixBtn.textContent = state.autoFix ? '⚡ Auto-Snap: ON' : 'Auto-Snap: OFF';
+    el.toggleAutoFixBtn.classList.toggle('bg-emerald-500/20', state.autoFix);
+    el.toggleAutoFixBtn.classList.toggle('text-emerald-300', state.autoFix);
+    el.toggleAutoFixBtn.classList.toggle('bg-white/10', !state.autoFix);
+    el.toggleAutoFixBtn.classList.toggle('text-slate-400', !state.autoFix);
+  };
+}
+
+function resetAll(){
+  state.placed = false; state.surfaceOk = false; state.validT = 0; state.collide = false;
+  state.scanDuration = 0;
+  anchor.visible = false; field.visible = false;
+  TL.phase = 'none'; TL.R = 0; TL.lift = 0; TL.squash = 0; rackLift = 0;
+  if (roofLine) { scene.remove(roofLine); roofLine = null; }
+  el.sheet.classList.add('hidden'); el.legacy.classList.add('hidden');
+  if (el.advancedFxBar) el.advancedFxBar.classList.add('hidden');
+  state.thermalMode = false; state.windMode = false; state.hologramHud = false; state.obstacleActive = false;
+  if (obstacleGroup) obstacleGroup.visible = false;
+  if (windMat) windMat.uniforms.uAlpha.value = 0;
+  updateHologramHUDs();
+  el.fitChip.classList.add('hidden'); el.roofChip.classList.add('hidden');
+  el.resetBtn.classList.add('hidden'); el.snapAzimuthWrap.classList.add('hidden');
+  el.inspectorCard.classList.add('hidden');
+  if (state.mode !== 'idle') {
+    el.fab.classList.remove('hidden');
+    setToast('Scanning surface… Pan slowly across the roof.', true, true);
+  }
+  selectType(0, true);
+}
+el.resetBtn.onclick = resetAll;
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   17. GESTURES, TAP-TO-INSPECT & TAP-TO-SKIP
+   ═══════════════════════════════════════════════════════════════════════════ */
+const gz = $('#gesture'), ptrs = new Map();
+let dragLast = null, lastAng = null, ptrDownPos = null;
+function toGround(x, y){
+  const cam = renderer.xr.isPresenting ? renderer.xr.getCamera() : camera;
+  _ray.setFromCamera(new THREE.Vector2(x/innerWidth*2 - 1, -(y/innerHeight)*2 + 1), cam);
+  return _ray.ray.intersectPlane(floorPlane, _hit) ? _hit.clone() : null;
+}
+
+gz.addEventListener('pointerdown', (e) => {
+  gz.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, { x:e.clientX, y:e.clientY });
+  ptrDownPos = { x: e.clientX, y: e.clientY };
+
+  // Instant Tap-to-Place anywhere during scanning:
+  if (!state.placed && state.mode !== 'idle') {
+    const tappedGround = toGround(e.clientX, e.clientY);
+    if (tappedGround) reticlePos.copy(tappedGround);
+    place();
+    return;
+  }
+
+  if (state.placed && (TL.phase === 'reveal' || TL.phase === 'hold')) {
+    TL.phase = 'settle'; TL.t = 0; TL.R = 1; TL.lift = 0;
+    triggerHaptic([40, 60]);
+    sfx.playImpact();
+    return;
+  }
+  // Direct 3D Raycast Sun Sphere Interaction
+  if (sunMarker && (state.placed || state.mode !== 'idle')) {
+    const cam = renderer.xr.isPresenting ? renderer.xr.getCamera() : camera;
+    _ray.setFromCamera(new THREE.Vector2(e.clientX/innerWidth*2 - 1, -(e.clientY/innerHeight)*2 + 1), cam);
+    const sunHits = _ray.intersectObject(sunMarker, true);
+    if (sunHits.length > 0) {
+      state.isDraggingSun = true;
+      triggerHaptic(30);
+      setToast('☀ Dragging Sun along celestial path', false, true, 1500);
+      return;
+    }
+  }
+  if (ptrs.size === 1) { dragLast = state.placed ? toGround(e.clientX, e.clientY) : null; lastAng = null; }
+  if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; lastAng = Math.atan2(b.y - a.y, b.x - a.x); dragLast = null; }
+});
+
+gz.addEventListener('pointermove', (e) => {
+  if (!ptrs.has(e.pointerId)) return; ptrs.set(e.pointerId, { x:e.clientX, y:e.clientY });
+  if (!state.placed || TL.phase === 'reveal') return;
+  if (state.isDraggingSun) {
+    // Map screen X to daylight hours (6:00 to 19:00)
+    const normX = clamp(e.clientX / innerWidth, 0.05, 0.95);
+    const scrubHour = 6.0 + normX * 13.0;
+    SUN_STATE.overrideHour = scrubHour;
+    el.timeSlider.value = scrubHour;
+    const hrs = Math.floor(scrubHour);
+    const mins = Math.floor((scrubHour - hrs) * 60).toString().padStart(2, '0');
+    el.timeVal.textContent = `${hrs.toString().padStart(2,'0')}:${mins}`;
+    updateSunLighting();
+    if (state.hologramHud) updateHologramHUDs();
+    return;
+  }
+  if (ptrs.size === 1 && dragLast) {
+    const p = toGround(e.clientX, e.clientY);
+    if (p) { anchor.position.x += p.x - dragLast.x; anchor.position.z += p.z - dragLast.z; dragLast = p; }
+  } else if (ptrs.size === 2) {
+    const [a, b] = [...ptrs.values()], ang = Math.atan2(b.y - a.y, b.x - a.x);
+    if (lastAng !== null) { let d = ang - lastAng; if (d > Math.PI) d -= 2*Math.PI; if (d < -Math.PI) d += 2*Math.PI; spin.rotation.y -= d; }
+    lastAng = ang;
+  }
+});
+
+const endPtr = (e) => {
+  if (ptrDownPos) {
+    const dist = Math.hypot(e.clientX - ptrDownPos.x, e.clientY - ptrDownPos.y);
+    if (dist < 8 && state.placed && TL.phase === 'done') {
+      // Raycast test on 3D objects for interactive inspector
+      const cam = renderer.xr.isPresenting ? renderer.xr.getCamera() : camera;
+      _ray.setFromCamera(new THREE.Vector2(e.clientX/innerWidth*2 - 1, -(e.clientY/innerHeight)*2 + 1), cam);
+      const hits = _ray.intersectObjects(interactiveObjects, true);
+      if (hits.length > 0) {
+        let obj = hits[0].object;
+        while (obj && !obj.userData?.title && obj.parent) obj = obj.parent;
+        if (obj && obj.userData?.title) {
+          triggerHaptic(20);
+          el.inspectIcon.textContent = obj.userData.type === 'inverter' ? '⚡' : (obj.userData.type === 'ballast' ? '🏗' : '☀️');
+          el.inspectTitle.textContent = obj.userData.title;
+          el.inspectSub.textContent = obj.userData.sub;
+          el.inspectDesc.textContent = obj.userData.desc;
+          el.inspectorCard.classList.remove('hidden');
+        }
+      }
+    }
+  }
+  state.isDraggingSun = false;
+  ptrs.delete(e.pointerId); lastAng = null; dragLast = null; ptrDownPos = null;
+  if (ptrs.size === 1 && state.placed) { const [v] = [...ptrs.values()]; dragLast = toGround(v.x, v.y); }
+};
+gz.addEventListener('pointerup', endPtr); gz.addEventListener('pointercancel', endPtr);
+gz.addEventListener('wheel', (e) => { if (state.placed) spin.rotation.y += e.deltaY * 0.003; }, { passive:true });
+
+let rotDir = 0;
+const bindRot = (b, d) => {
+  b.addEventListener('pointerdown', () => rotDir = d);
+  ['pointerup','pointerleave','pointercancel'].forEach(ev => b.addEventListener(ev, () => rotDir = 0));
+};
+bindRot($('#rotL'), 1); bindRot($('#rotR'), -1);
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   18. MATERIAL SWAP & LIVE LOOK CROSS-FADE
+   ═══════════════════════════════════════════════════════════════════════════ */
+const XF = { from: { ...TYPES[0].look }, to: { ...TYPES[0].look }, t: 1, nextTex: TEX.mono };
+let curLook = { ...TYPES[0].look };
+function selectType(i, instant = false){
+  if (i === state.typeIndex && !instant) return;
+  const nt = TYPES[i];
+  for (const p of panels) {
+    const u = p.top.userData.u;
+    if (u.uMix.value >= 0.5 && u.uMapB.value) p.top.map = u.uMapB.value;
+    u.uMix.value = 0;
+  }
+  XF.from = { ...curLook }; XF.to = { ...nt.look }; XF.t = instant ? 1 : 0; XF.nextTex = TEX[nt.tex];
+  for (const p of panels) p.top.userData.u.uMapB.value = XF.nextTex;
+  state.typeIndex = i; renderAnalytics(i);
+  sfx.playClick();
+}
+
+function updateLook(dt){
+  if (XF.t < 1) XF.t = Math.min(1, XF.t + dt / 0.9);
+  const m = easeInOutCubic(XF.t);
+  const L = {}; for (const k of LOOK_KEYS) L[k] = XF.from[k] + (XF.to[k] - XF.from[k]) * m; curLook = L;
+  for (const p of panels) {
+    const u = p.top.userData.u;
+    u.uMix.value = XF.t >= 1 ? 0 : m;
+    if (XF.t >= 1 && p.top.map !== XF.nextTex) p.top.map = XF.nextTex;
+    const t = p.top;
+    t.roughness = L.rough; t.metalness = L.metal; t.clearcoat = L.clear; t.clearcoatRoughness = L.clearR; t.envMapIntensity = L.env;
+    t.opacity = L.opacity; t.transparent = L.opacity < 0.995; u.uShimmer.value = L.shimmer;
+    p.rg.opacity = L.rear * 0.92;
+  }
+  rackLift = damp(rackLift, L.lift, 5, dt);
+  tilts.forEach(t => t.position.y = CFG.PANEL_YC + rackLift);
+  legs.forEach(l => l.mesh.scale.y = l.h + rackLift);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   19. ANTIGRAVITY TIMELINE v2 & DYNAMICS
+   ═══════════════════════════════════════════════════════════════════════════ */
+let explodedProgress = 0;
+function updateExplodedSpring(dt){
+  const target = state.exploded ? 1.0 : 0.0;
+  explodedProgress = damp(explodedProgress, target, 8.5, dt);
+  
+  panels.forEach((p) => {
+    if (p.mesh) p.mesh.position.y = explodedProgress * 0.32;
+    if (p.rg && p.rg.position) p.rg.position.y = explodedProgress * -0.12 + 0.002;
+  });
+  legs.forEach((l) => {
+    l.mesh.position.y = explodedProgress * -0.08;
+  });
+
+  laserLines.forEach((line) => {
+    line.material.opacity = explodedProgress * 0.85;
+    line.scale.set(1, 1 + explodedProgress * 0.5, 1);
+  });
+}
+
+function stepTimeline(dt){
+  TL.t += dt;
+  switch (TL.phase) {
+    case 'reveal': {
+      const p = clamp(TL.t / CFG.REVEAL_T); TL.R = p;
+      TL.lift = CFG.HOVER * easeInOutCubic(clamp(TL.t / (CFG.REVEAL_T * 0.78)));
+      FIELD.alpha = clamp(TL.t / 0.7);
+      if (p >= 1) { TL.phase = 'hold'; TL.t = 0; }
+      break;
+    }
+    case 'hold':
+      TL.R = 1; TL.lift = CFG.HOVER; FIELD.alpha = 1;
+      if (TL.t >= CFG.HOLD_T) { TL.phase = 'drop'; TL.t = 0; }
+      break;
+    case 'drop': {
+      const p = clamp(TL.t / CFG.DROP_T);
+      TL.lift = CFG.HOVER * (1 - p*p); FIELD.alpha = 1 - smooth(clamp(p * 1.15));
+      if (p >= 1) {
+        TL.phase = 'settle'; TL.t = 0; FIELD.shock = 1;
+        triggerHaptic([40, 60]);
+        sfx.playImpact();
+        const { hx, hz } = CFG.FOOT;
+        const corners = [
+          new THREE.Vector3(-hx, 0, -hz), new THREE.Vector3(hx, 0, -hz),
+          new THREE.Vector3(hx, 0, hz),   new THREE.Vector3(-hx, 0, hz),
+          new THREE.Vector3(-hx, 0, 0),   new THREE.Vector3(hx, 0, 0)
+        ];
+        triggerDustImpact(corners);
+        if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+          canvas.classList.remove('shake'); void canvas.offsetWidth; canvas.classList.add('shake');
+        }
+      }
+      break;
+    }
+    case 'settle': {
+      const u = clamp(TL.t / CFG.SETTLE_T), e = easeOutElastic(u);
+      TL.lift = 0.045 * Math.abs(Math.sin(u * Math.PI * 2.6)) * Math.exp(-u * 4.2);
+      TL.squash = (e - 1) * 0.075; FIELD.alpha = 0;
+      if (u >= 1) { TL.phase = 'done'; TL.lift = 0; TL.squash = 0; field.visible = false; }
+      break;
+    }
+  }
+  const floating = TL.phase === 'reveal' || TL.phase === 'hold';
+  arr.position.y = TL.lift + (floating ? Math.sin(TIME.value * 2.6) * 0.012 * TL.lift / CFG.HOVER : 0);
+  arr.scale.set(1 - TL.squash * 0.5, 1 + TL.squash, 1 - TL.squash * 0.5);
+
+  if (FIELD.shock > 0) FIELD.shock = Math.max(0, FIELD.shock - dt * 1.3);
+  const fu = field.userData;
+  if (field.visible) {
+    fu.disc.material.uniforms.uAlpha.value = FIELD.alpha;
+    fu.dome.material.uniforms.uAlpha.value = FIELD.alpha;
+    fu.parts.material.uniforms.uAlpha.value = FIELD.alpha;
+    if (fu.holoRingA) fu.holoRingA.material.uniforms.uAlpha.value = FIELD.alpha;
+    if (fu.holoRingB) fu.holoRingB.material.uniforms.uAlpha.value = FIELD.alpha;
+    const s = 1 + (1 - FIELD.shock) * 2.2;
+    fu.shock.scale.set(s, 1, s);
+    fu.shock.material.uniforms.uA.value = FIELD.shock * 0.9 * (FIELD.shock > 0 ? 1 : 0);
+  }
+  shadowMat.opacity = clamp((0.42 - (SUN_STATE.cloudCover/100)*0.25) * smooth(clamp(TL.R * 1.3 - 0.1)), 0.05, 0.45);
+}
+
+function updateReveal(){
+  for (const m of revealables) {
+    const u = m.userData.u;
+    u.uReveal.value = smooth(clamp((TL.R - m.userData.delay) / m.userData.span));
+  }
+  const b = 0.55 + 0.45 * Math.sin(TIME.value * 4);
+  ledMats.forEach(m => m.emissiveIntensity = 0.9 + b * 1.3);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   20. LIVE FITMENT & SNAP-BACK SUGGESTION
+   ═══════════════════════════════════════════════════════════════════════════ */
+const _v = new THREE.Vector3();
+function updateFit(dt){
+  if (!state.placed) { glowU.uAlpha.value = damp(glowU.uAlpha.value, 0, 8, dt); snapArrow.visible = false; return; }
+  anchor.updateMatrixWorld(true);
+  const { hx, hz } = CFG.FOOT;
+  const pts = [[-hx,-hz],[hx,-hz],[hx,hz],[-hx,hz],[0,-hz],[hx,0],[0,hz],[-hx,0]];
+  const bad = pts.map(([x, z]) => { _v.set(x, 0, z); spin.localToWorld(_v); return !pointInPoly(_v.x, _v.z, roofPoly); });
+  const collide = bad.some(Boolean);
+  if (collide !== state.collide) {
+    state.collide = collide; setFitUI(collide);
+    if (collide) triggerHaptic([35, 40, 35]);
+    updateBuilderStats();
+  }
+  glowU.uState.value = damp(glowU.uState.value, collide ? 1 : 0, 9, dt);
+  const B = glowU.uBad.value;
+  B.x = damp(B.x, bad[0] ? 1 : 0, 12, dt); B.y = damp(B.y, bad[1] ? 1 : 0, 12, dt);
+  B.z = damp(B.z, bad[2] ? 1 : 0, 12, dt); B.w = damp(B.w, bad[3] ? 1 : 0, 12, dt);
+  glowU.uAlpha.value = damp(glowU.uAlpha.value, TL.R > 0.55 ? 1 : 0, 4, dt);
+  roofMat.color.lerpColors(new THREE.Color(0x4fd8ff), new THREE.Color(0xff3b5c), glowU.uState.value);
+
+  if (collide && roofPoly.length >= 3) {
+    let cx = 0, cz = 0;
+    roofPoly.forEach(p => { cx += p.x; cz += p.y; });
+    cx /= roofPoly.length; cz /= roofPoly.length;
+    const roofCenterWorld = new THREE.Vector3(cx, state.floorY, cz);
+    const arrowDirWorld = roofCenterWorld.clone().sub(anchor.position);
+    arrowDirWorld.y = 0;
+    if (arrowDirWorld.length() > 0.1) {
+      arrowDirWorld.normalize();
+      const localDir = arrowDirWorld.clone().applyQuaternion(spin.quaternion.clone().invert());
+      snapArrow.setDirection(localDir);
+      snapArrow.visible = true;
+    } else snapArrow.visible = false;
+  } else snapArrow.visible = false;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   21. SCANNING & MAIN ANIMATION LOOP
+   ═══════════════════════════════════════════════════════════════════════════ */
+function updateScan(dt){
+  const scanning = state.mode !== 'idle' && !state.placed;
+  if (scanning) {
+    state.scanDuration += dt;
+    if (el.camGuideHud) el.camGuideHud.classList.remove('hidden');
+
+    // 1. Calculate Camera Tilt / Pitch Angle
+    const camDir = new THREE.Vector3();
+    const curCam = renderer.xr.isPresenting ? renderer.xr.getCamera() : camera;
+    curCam.getWorldDirection(camDir);
+    const pitchDeg = Math.round(Math.asin(Math.max(-1, Math.min(1, -camDir.y))) * (180 / Math.PI));
+    state.camPitch = pitchDeg;
+    
+    if (el.camPitchVal) {
+      if (pitchDeg >= 30 && pitchDeg <= 60) {
+        el.camPitchVal.textContent = `${pitchDeg}° · Optimal`;
+        el.camPitchVal.className = 'font-mono font-bold text-emerald-300';
+      } else if (pitchDeg < 30) {
+        el.camPitchVal.textContent = `${pitchDeg}° · Tilt Down`;
+        el.camPitchVal.className = 'font-mono font-bold text-amber-300';
+        if (el.camGuideHint) el.camGuideHint.textContent = '💡 Tilt camera down 35°-50° towards the roof';
+      } else {
+        el.camPitchVal.textContent = `${pitchDeg}° · Steep`;
+        el.camPitchVal.className = 'font-mono font-bold text-cyan-300';
+      }
+    }
+
+    // 2. Calculate Distance to Reticle
+    if (reticleValid) {
+      const dist = curCam.position.distanceTo(reticlePos);
+      state.camDist = dist;
+      if (el.camDistVal) {
+        if (dist >= 1.8 && dist <= 5.5) {
+          el.camDistVal.textContent = `${dist.toFixed(1)}m · Optimal`;
+          el.camDistVal.className = 'font-mono font-bold text-cyan-300';
+          if (el.camGuideHint && pitchDeg >= 30) el.camGuideHint.textContent = '⚡ Surface locked! Tap anywhere or button to fix';
+        } else if (dist < 1.8) {
+          el.camDistVal.textContent = `${dist.toFixed(1)}m · Close`;
+          el.camDistVal.className = 'font-mono font-bold text-amber-300';
+          if (el.camGuideHint) el.camGuideHint.textContent = '💡 Step back ~1m for full array footprint';
+        } else {
+          el.camDistVal.textContent = `${dist.toFixed(1)}m · Distant`;
+          el.camDistVal.className = 'font-mono font-bold text-slate-300';
+        }
+      }
+    }
+
+    // 3. Camera Video Lighting
+    if (el.camLuxVal) {
+      const exposure = renderer.toneMappingExposure || 1.0;
+      const estLux = Math.round(750 * exposure);
+      el.camLuxVal.textContent = `${estLux} W/m²`;
+    }
+  } else {
+    if (el.camGuideHud) el.camGuideHud.classList.add('hidden');
+  }
+
+  // Rapid Hysteresis Lock (locks in 0.12s!)
+  state.validT = reticleValid ? Math.min(state.validT + dt * 5.0, 1.0) : Math.max(state.validT - dt * 2.0, 0);
+  const ok = state.validT > 0.12;
+
+  if (scanning && ok !== state.surfaceOk) {
+    state.surfaceOk = ok;
+    if (el.fab) el.fab.disabled = false;
+    setToast(ok ? '⚡ Surface ready! Tap anywhere to fix array.' : 'Scanning surface… Move phone slowly across roof.', !ok, true);
+    if (ok && el.coachCard) el.coachCard.classList.add('hidden');
+  }
+
+  // Auto-Snap execution if enabled
+  if (scanning && state.autoFix && ok && state.scanDuration > 0.35 && !state.placed) {
+    place();
+    return;
+  }
+
+  // Update Hologram Ghost Array
+  if (ghostArray) {
+    if (scanning && reticleValid) {
+      ghostArray.visible = true;
+      ghostArray.position.copy(reticlePos);
+      const camDir = new THREE.Vector3();
+      (renderer.xr.isPresenting ? renderer.xr.getCamera() : camera).getWorldDirection(camDir);
+      ghostArray.rotation.y = Math.atan2(-camDir.x, -camDir.z);
+    } else {
+      ghostArray.visible = false;
+    }
+  }
+
+  const target = scanning && reticleValid ? 1 : (scanning ? 0.25 : 0);
+  gridU.uAlpha.value = damp(gridU.uAlpha.value, target, 6, dt);
+  fpU.uAlpha.value = damp(fpU.uAlpha.value, scanning ? (reticleValid ? 1 : 0.5) : 0, 6, dt);
+  const showScan = gridU.uAlpha.value > 0.01; scan.visible = showScan; featurePts.visible = showScan;
+  if (reticleValid) { scan.position.copy(reticlePos); fpU.uCenter.value.copy(reticlePos); }
+  reticle.scale.setScalar(1 + 0.14 * Math.sin(TIME.value * 5));
+  reticle.material.color.set(ok ? 0x22ff88 : 0xb8ffd8);
+  reticle.visible = !state.placed && reticleValid;
+  reticle.position.set(0, 0.01, 0); grid.position.set(0, 0.004, 0);
+}
+
+const clock = new THREE.Clock();
+function loop(_, frame){
+  const dt = Math.min(clock.getDelta(), 0.05);
+  TIME.value += dt;
+
+  if (state.mode === 'xr' && frame) xrUpdate(frame); else fallbackUpdate();
+  if (rotDir && state.placed) spin.rotation.y += rotDir * dt * 1.4;
+
+  updateScan(dt);
+  stepTimeline(dt);
+  updateReveal();
+  updateFit(dt);
+  updateLook(dt);
+  updateEnergyVisuals(dt);
+  updateElectricArcs(dt);
+  updateDustParticles(dt);
+  updateCellVortex(dt);
+  updateExplodedSpring(dt);
+  updateCinematicTour(dt);
+  if (windMat) windMat.uniforms.uAlpha.value = damp(windMat.uniforms.uAlpha.value, state.windMode ? 0.9 : 0.0, 7.0, dt);
+  if (thermalMat) {
+    thermalMat.uniforms.uAmbient.value = SUN_STATE.temp;
+    thermalMat.uniforms.uIrradiance.value = SUN_STATE.dni;
+  }
+
+  sun.target.position.set(0, 0, 0);
+  renderer.render(scene, camera);
+}
+renderer.setAnimationLoop(loop);
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   22. INTERACTIVE UI HANDLERS (Layout Builder, ROI, AI, Snapshot, Inspector)
+   ═══════════════════════════════════════════════════════════════════════════ */
+if (el.coachDismiss) el.coachDismiss.onclick = () => { state.coachDismissed = true; if (el.coachCard) el.coachCard.classList.add('hidden'); };
+if (el.sensorsBtn && el.sensorsModal) el.sensorsBtn.onclick = () => el.sensorsModal.classList.remove('hidden');
+if (el.closeSensorsBtn && el.sensorsModal) el.closeSensorsBtn.onclick = () => el.sensorsModal.classList.add('hidden');
+
+// Advanced Interactive Toolbar Handlers
+el.thermalModeBtn.onclick = () => {
+  state.thermalMode = !state.thermalMode;
+  el.thermalBtnLabel.textContent = state.thermalMode ? 'Normal Cam' : 'IR Thermal Cam';
+  el.thermalModeBtn.classList.toggle('border-rose-400', state.thermalMode);
+  el.thermalModeBtn.classList.toggle('bg-rose-500/30', state.thermalMode);
+  panels.forEach(p => {
+    p.mesh.material[2] = state.thermalMode ? thermalMat : p.top;
+  });
+  triggerHaptic([20, 30]);
+  if (sfx) sfx.playThermal();
+  setToast(state.thermalMode ? '🔥 IR Thermal FLIR Mode: Active' : 'Standard PBR Rendering', false, true, 2000);
+};
+
+el.windModeBtn.onclick = () => {
+  state.windMode = !state.windMode;
+  el.windBtnLabel.textContent = state.windMode ? 'Hide Wind' : 'Wind Aerodynamics';
+  el.windModeBtn.classList.toggle('border-cyan-400', state.windMode);
+  el.windModeBtn.classList.toggle('bg-cyan-500/30', state.windMode);
+  triggerHaptic([20, 30]);
+  if (sfx) sfx.playWind();
+  setToast(state.windMode ? '💨 3D Wind Aerodynamic Flow: Active' : 'Wind Flow Hidden', false, true, 2000);
+};
+
+el.hologramHudBtn.onclick = () => {
+  state.hologramHud = !state.hologramHud;
+  el.hologramBtnLabel.textContent = state.hologramHud ? 'Hide HUDs' : '3D Module HUDs';
+  el.hologramHudBtn.classList.toggle('border-amber-400', state.hologramHud);
+  el.hologramHudBtn.classList.toggle('bg-amber-500/30', state.hologramHud);
+  updateHologramHUDs();
+  triggerHaptic(25);
+  setToast(state.hologramHud ? '📊 3D Floating Module HUDs: Active' : 'Module HUDs Hidden', false, true, 2000);
+};
+
+el.obstacleBtn.onclick = () => {
+  state.obstacleActive = !state.obstacleActive;
+  obstacleGroup.visible = state.obstacleActive;
+  el.obstacleBtnLabel.textContent = state.obstacleActive ? 'Remove Obstacle' : 'Shade Obstacle';
+  el.obstacleBtn.classList.toggle('border-emerald-400', state.obstacleActive);
+  el.obstacleBtn.classList.toggle('bg-emerald-500/30', state.obstacleActive);
+  triggerHaptic(25);
+  setToast(state.obstacleActive ? '🌲 Rooftop Shading Obstacle Placed' : 'Obstacle Removed', false, true, 2500);
+};
+
+el.cineTourBtn.onclick = () => {
+  state.cineTourActive = true;
+  state.cineTourT = 0;
+  triggerHaptic([40, 60]);
+  if (sfx) sfx.playCineChime();
+  setToast('🎬 Starting Cinematic Orbit Flyover…', false, true, 3000);
+};
+
+// AI Modal
+el.aiAdvisorBtn.onclick = () => { runAIDecisionAnalysis(); el.aiModal.classList.remove('hidden'); };
+el.aiSheetBadge.onclick = () => { runAIDecisionAnalysis(); el.aiModal.classList.remove('hidden'); };
+el.dSurfaceChip.onclick = () => { runAIDecisionAnalysis(); el.aiModal.classList.remove('hidden'); };
+el.closeAiModalBtn.onclick = () => el.aiModal.classList.add('hidden');
+
+document.querySelectorAll('.surf-btn').forEach(btn => {
+  btn.onclick = () => {
+    document.querySelectorAll('.surf-btn').forEach(b => {
+      b.className = 'surf-btn px-2 py-1.5 rounded-xl border border-white/10 bg-white/5 text-slate-300 hover:border-white/30';
+    });
+    btn.className = 'surf-btn px-2 py-1.5 rounded-xl border border-emerald-400 bg-emerald-500/20 text-white font-medium';
+    CFG.SURFACE = btn.dataset.surf;
+    runAIDecisionAnalysis();
+    renderAnalytics(state.typeIndex);
+    sfx.playClick();
+  };
+});
+
+el.aiApplyBtn.onclick = () => {
+  if (!latestAiEvaluation) return;
+  const topIdx = latestAiEvaluation.topRecommendation.index;
+  selectType(topIdx);
+  cards[topIdx].scrollIntoView({ behavior:'smooth', inline:'center', block:'nearest' });
+  el.aiModal.classList.add('hidden');
+  if (state.placed) {
+    const optAzimuth = latestAiEvaluation.optimalGeometry.azimuth;
+    spin.rotation.y = (optAzimuth - SUN_STATE.compassOffset) * Math.PI / 180;
+  }
+  triggerHaptic([30, 40]);
+  setToast(`Applied AI Choice: ${latestAiEvaluation.topRecommendation.name}`, false, true, 3500);
+};
+
+// Layout Builder Modal
+el.layoutBtn.onclick = () => el.layoutModal.classList.remove('hidden');
+el.closeLayoutBtn.onclick = () => el.layoutModal.classList.add('hidden');
+
+el.colSlider.oninput = (e) => {
+  CFG.COLS = parseInt(e.target.value);
+  el.colVal.textContent = `${CFG.COLS} Cols`;
+  buildArraySystem(); renderAnalytics(state.typeIndex); sfx.playClick();
+};
+el.rowSlider.oninput = (e) => {
+  CFG.ROWS = parseInt(e.target.value);
+  el.rowVal.textContent = `${CFG.ROWS} Rows`;
+  buildArraySystem(); renderAnalytics(state.typeIndex); sfx.playClick();
+};
+el.tiltSlider.oninput = (e) => {
+  const deg = parseInt(e.target.value);
+  CFG.TILT = THREE.MathUtils.degToRad(deg);
+  el.tiltVal.textContent = `${deg}°`;
+  buildArraySystem(); renderAnalytics(state.typeIndex);
+};
+el.pitchSlider.oninput = (e) => {
+  CFG.ROW_PITCH = parseFloat(e.target.value);
+  el.pitchVal.textContent = `${CFG.ROW_PITCH.toFixed(2)} m`;
+  buildArraySystem(); renderAnalytics(state.typeIndex);
+};
+
+// ROI Simulator Modal
+el.roiBtn.onclick = () => { updateRoiCalculations(); el.roiModal.classList.remove('hidden'); };
+el.closeRoiBtn.onclick = () => el.roiModal.classList.add('hidden');
+el.roiBillSlider.oninput = () => { updateRoiCalculations(); };
+
+// AR Snapshot Generator
+el.snapshotBtn.onclick = () => {
+  triggerHaptic(30);
+  try {
+    const dataUrl = canvas.toDataURL('image/png');
+    el.snapshotImg.src = dataUrl;
+    el.downloadSnapshotBtn.href = dataUrl;
+    el.snapshotModal.classList.remove('hidden');
+  } catch (err) {
+    setToast('Could not capture frame.', false, true, 2000);
+  }
+};
+el.closeSnapshotBtn.onclick = () => el.snapshotModal.classList.add('hidden');
+
+// 3D Inspector Card
+el.closeInspectBtn.onclick = () => el.inspectorCard.classList.add('hidden');
+el.explodeViewBtn.onclick = () => {
+  state.exploded = !state.exploded;
+  el.explodeViewBtn.textContent = state.exploded ? '✕ Reset Exploded View' : '🔍 Toggle 3D Exploded View';
+  triggerHaptic([25, 35]);
+  if (sfx) sfx.playLaser();
+};
+
+let sheetExpanded = false;
+function toggleSheet(expand = null){
+  sheetExpanded = (expand !== null) ? expand : !sheetExpanded;
+  el.sheetExpanded.classList.toggle('hidden', !sheetExpanded);
+  el.sheetToggleText.textContent = sheetExpanded ? 'Tap to collapse ✕' : 'Tap to expand ⚙';
+}
+el.sheetHandle.onclick = () => toggleSheet();
+el.settingsBtn.onclick = () => toggleSheet(true);
+
+el.timeSlider.addEventListener('input', (e) => {
+  const h = parseFloat(e.target.value);
+  SUN_STATE.overrideHour = h;
+  const hrs = Math.floor(h);
+  const mins = Math.floor((h - hrs) * 60).toString().padStart(2, '0');
+  el.timeVal.textContent = `${hrs.toString().padStart(2,'0')}:${mins}`;
+  updateSunLighting();
+});
+el.noonBtn.onclick = () => {
+  el.timeSlider.value = 12; SUN_STATE.overrideHour = 12; el.timeVal.textContent = '12:00'; updateSunLighting();
+};
+el.liveTimeBtn.onclick = () => {
+  SUN_STATE.overrideHour = null;
+  const now = new Date();
+  const h = now.getHours() + now.getMinutes() / 60;
+  el.timeSlider.value = clamp(h, 6, 19);
+  el.timeVal.textContent = `${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}`;
+  updateSunLighting();
+};
+
+el.snapAzimuthBtn.onclick = () => {
+  if (!state.placed) return;
+  const optAzimuth = SUN_STATE.lat >= 0 ? 180 : 0;
+  const targetYaw = (optAzimuth - SUN_STATE.compassOffset) * Math.PI / 180;
+  spin.rotation.y = targetYaw;
+  triggerHaptic(25);
+  setToast(`Array aligned to true solar ${SUN_STATE.lat >= 0 ? 'South' : 'North'}.`, false, true, 3000);
+};
+
+el.hapticsToggle.onchange = (e) => { CFG.HAPTICS_ENABLED = e.target.checked; };
+el.energyBeamsToggle.onchange = (e) => { CFG.ENERGY_BEAMS_ENABLED = e.target.checked; };
+
+// Boot
+runAIDecisionAnalysis();
+selectType(0, true);
+curLook = { ...TYPES[0].look };
+setToast('', false, false);
+detect();
+window.__solarfit = { scene, state, TL, place, selectType, CFG, SUN_STATE, updateSunLighting, aiSolarEngine, runAIDecisionAnalysis, buildArraySystem };
+</script>
+</body>
+</html>

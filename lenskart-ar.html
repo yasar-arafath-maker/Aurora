@@ -1,0 +1,1253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#080c14">
+<title>Lenskart 3D AR Studio — Instant Eyewear Virtual Try-On</title>
+
+<!-- Google Fonts -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+<!-- Tailwind CSS CDN -->
+<script src="https://cdn.tailwindcss.com"></script>
+
+<!-- MediaPipe Face Mesh & Camera Utils -->
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+
+<!-- Import Map for Three.js r160 -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<style>
+  :root {
+    --lk-cyan: #00bac7;
+    --lk-emerald: #10b981;
+    --lk-indigo: #6366f1;
+    --lk-amber: #f59e0b;
+    --lk-bg: #070a12;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
+    background: var(--lk-bg); color: #f8fafc;
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    user-select: none; -webkit-user-select: none;
+  }
+  .font-display { font-family: 'Outfit', sans-serif; }
+  .font-mono { font-family: 'JetBrains Mono', monospace; }
+
+  /* Camera Video & Mirroring */
+  #webcamVideo {
+    position: fixed; inset: 0; width: 100%; height: 100%;
+    object-fit: cover; z-index: 0;
+    transform: scaleX(-1); /* True Mirror Mode */
+  }
+  #threeCanvas {
+    position: fixed; inset: 0; width: 100%; height: 100%;
+    z-index: 1; pointer-events: none;
+  }
+  #uiRoot {
+    position: fixed; inset: 0; z-index: 2; pointer-events: none;
+  }
+  .pe { pointer-events: auto; }
+
+  /* Glassmorphism Styles */
+  .glass {
+    background: rgba(10, 16, 28, 0.75);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+  }
+  .glass-card {
+    background: rgba(13, 21, 38, 0.88);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+  }
+  .glass-panel {
+    background: linear-gradient(180deg, rgba(12, 18, 32, 0.82) 0%, rgba(6, 10, 20, 0.94) 100%);
+    backdrop-filter: blur(28px);
+    -webkit-backdrop-filter: blur(28px);
+    border-top: 1px solid rgba(255, 255, 255, 0.15);
+  }
+
+  /* Custom Scrollbar */
+  .no-scroll { scrollbar-width: none; }
+  .no-scroll::-webkit-scrollbar { display: none; }
+
+  /* Animations */
+  @keyframes radarPulse {
+    0% { transform: scale(0.96); opacity: 0.6; }
+    50% { transform: scale(1.04); opacity: 1; }
+    100% { transform: scale(0.96); opacity: 0.6; }
+  }
+  @keyframes scanLine {
+    0% { top: 15%; opacity: 0; }
+    15% { opacity: 1; }
+    85% { opacity: 1; }
+    100% { top: 85%; opacity: 0; }
+  }
+  @keyframes badgePop {
+    0% { transform: scale(0.7); opacity: 0; }
+    70% { transform: scale(1.08); }
+    100% { transform: scale(1); opacity: 1; }
+  }
+  @keyframes slideUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes glowGreen {
+    0%, 100% { box-shadow: 0 0 15px rgba(16, 185, 129, 0.4); }
+    50% { box-shadow: 0 0 35px rgba(16, 185, 129, 0.85); }
+  }
+
+  .radar-guide { animation: radarPulse 2.4s ease-in-out infinite; }
+  .scan-beam { animation: scanLine 2.2s ease-in-out infinite; }
+  .badge-pop { animation: badgePop 0.45s cubic-bezier(0.16, 1, 0.3, 1) both; }
+  .slide-up { animation: slideUp 0.38s cubic-bezier(0.16, 1, 0.3, 1) both; }
+  .glow-locked { animation: glowGreen 2s ease-in-out infinite; }
+
+  /* Active states */
+  .frame-card {
+    transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.25s, background 0.25s;
+  }
+  .frame-card.active {
+    transform: translateY(-4px) scale(1.04);
+    border-color: #00bac7;
+    background: rgba(0, 186, 199, 0.16);
+    box-shadow: 0 10px 25px -5px rgba(0, 186, 199, 0.35);
+  }
+  .color-dot.active {
+    outline: 2.5px solid #00bac7;
+    outline-offset: 3px;
+    transform: scale(1.15);
+  }
+  .lens-chip.active {
+    background: rgba(0, 186, 199, 0.25);
+    border-color: #00bac7;
+    color: #38bdf8;
+    font-weight: 700;
+  }
+
+  /* Shutter flash animation */
+  #shutterFlash {
+    position: fixed; inset: 0; z-index: 50; background: white;
+    opacity: 0; pointer-events: none; transition: opacity 0.08s ease-out;
+  }
+  #shutterFlash.flash { opacity: 0.95; }
+</style>
+</head>
+<body>
+
+<!-- Camera Video Stream (Mirrored) -->
+<video id="webcamVideo" playsinline muted autoplay></video>
+
+<!-- Three.js 3D Eyewear Canvas -->
+<canvas id="threeCanvas"></canvas>
+
+<!-- Shutter Flash for Photos -->
+<div id="shutterFlash"></div>
+
+<!-- =========================================================================
+     CAMERA FACE TARGET GUIDE & LOCK HUD
+     ========================================================================= -->
+<div id="faceGuideWrap" class="fixed inset-0 z-[1] flex items-center justify-center pointer-events-none transition-opacity duration-500">
+  <div id="faceOval" class="relative w-64 h-80 sm:w-72 sm:h-96 rounded-[50%] border-2 border-dashed border-cyan-400/50 radar-guide flex flex-col items-center justify-between p-6 transition-all duration-300">
+    <div id="scanLine" class="scan-beam absolute inset-x-6 h-0.5 bg-gradient-to-r from-transparent via-cyan-400 to-transparent"></div>
+    <div class="text-[10px] sm:text-xs font-mono uppercase tracking-widest text-cyan-300 bg-black/60 px-3 py-1 rounded-full border border-cyan-400/30">
+      <span id="guideText">Position Face in Oval</span>
+    </div>
+    <!-- Eye Crosshairs -->
+    <div class="w-full flex justify-around px-4 opacity-75">
+      <div class="w-6 h-6 border-t-2 border-l-2 border-cyan-400/80"></div>
+      <div class="w-6 h-6 border-t-2 border-r-2 border-cyan-400/80"></div>
+    </div>
+    <div id="lockStatusBadge" class="text-[11px] font-semibold text-slate-300 bg-black/60 px-3.5 py-1 rounded-full border border-white/10 flex items-center gap-1.5">
+      <span id="lockDot" class="w-2 h-2 rounded-full bg-amber-400 inline-block animate-ping"></span>
+      <span id="lockMsg">Calibrating AR Face Mesh…</span>
+    </div>
+  </div>
+</div>
+
+<!-- =========================================================================
+     MAIN USER INTERFACE
+     ========================================================================= -->
+<div id="uiRoot">
+
+  <!-- TOP BAR -->
+  <header class="absolute top-0 inset-x-0 p-3 sm:p-4 flex items-start justify-between" style="padding-top:max(.75rem,env(safe-area-inset-top))">
+    <!-- Brand Pill -->
+    <div class="glass pe rounded-2xl px-3.5 py-2 flex items-center gap-2.5 shadow-xl">
+      <div class="w-8 h-8 rounded-xl bg-gradient-to-tr from-cyan-500 to-indigo-600 flex items-center justify-center text-white font-bold text-base shadow-md">
+        🕶️
+      </div>
+      <div>
+        <div class="flex items-center gap-1.5">
+          <span class="font-display font-extrabold text-sm sm:text-base text-white tracking-tight">LENSKART</span>
+          <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 font-bold">3D AR</span>
+          <span id="fpsCounter" class="text-[9px] font-mono text-slate-400 ml-1">60 FPS</span>
+        </div>
+        <div class="flex items-center gap-2 mt-0.5">
+          <span id="faceShapeBadge" class="text-[10px] sm:text-[11px] text-emerald-400 font-semibold flex items-center gap-1">
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+            Detecting Face…
+          </span>
+          <span class="text-slate-500 text-[10px]">|</span>
+          <span id="pdMetricBadge" class="text-[10px] sm:text-[11px] font-mono text-cyan-300">PD: ~63 mm</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Quick Tool Buttons -->
+    <div class="flex items-center gap-1.5">
+      <!-- AI Stylist Advisor Modal Trigger -->
+      <button id="btnAiStylist" class="glass pe rounded-full px-3 py-2 text-xs font-semibold text-emerald-300 border border-emerald-500/40 flex items-center gap-1.5 active:scale-95 transition-all shadow-lg hover:bg-emerald-500/10">
+        <span>✨</span><span class="hidden sm:inline">AI Stylist</span>
+      </button>
+
+      <!-- 4-Way Comparison Grid -->
+      <button id="btnCompare" class="glass pe rounded-full px-3 py-2 text-xs font-semibold text-amber-300 border border-amber-500/40 flex items-center gap-1.5 active:scale-95 transition-all shadow-lg hover:bg-amber-500/10" title="Compare Looks">
+        <span>◫</span><span class="hidden sm:inline">Compare</span>
+        <span id="compareCount" class="w-4 h-4 rounded-full bg-amber-500/30 text-amber-300 text-[9px] font-mono flex items-center justify-center font-bold">0</span>
+      </button>
+
+      <!-- 3D Studio Inspect Mode -->
+      <button id="btnInspect3D" class="glass pe rounded-full px-2.5 py-2 text-xs font-semibold text-indigo-300 border border-indigo-500/40 active:scale-95 transition-all shadow-lg hover:bg-indigo-500/10" title="360° Studio Orbit Mode">
+        🔄 3D
+      </button>
+
+      <!-- Demo / Webcam Mode Toggle -->
+      <button id="btnToggleSource" class="glass pe rounded-full px-2.5 py-2 text-xs font-medium text-slate-200 active:scale-95 transition-all shadow-lg" title="Switch between Webcam & 3D Avatar Demo">
+        <span id="sourceIcon">📷</span>
+      </button>
+
+      <!-- Sound Toggle -->
+      <button id="btnToggleAudio" class="glass pe rounded-full px-2.5 py-2 text-xs font-medium text-slate-300 active:scale-95 transition-all shadow-lg" title="Toggle Audio Chimes">
+        🔊
+      </button>
+    </div>
+  </header>
+
+  <!-- FITMENT & PD STATUS TOAST (Center-Top) -->
+  <div class="absolute inset-x-0 top-20 flex justify-center px-4 pointer-events-none">
+    <div id="fitToast" class="glass-card pe hidden rounded-full px-4 py-1.5 text-xs font-semibold border border-cyan-400/40 text-cyan-200 shadow-xl flex items-center gap-2 slide-up">
+      <span id="fitIcon">⚡</span>
+      <span id="fitText">Instant Face Lock Activated · Medium Fit</span>
+      <button id="btnFineTune" class="underline text-emerald-300 ml-1 text-[11px] font-bold hover:text-white">Adjust Fit</button>
+    </div>
+  </div>
+
+  <!-- FLOATING FIT TUNER POPUP (Triggered by 'Adjust Fit') -->
+  <div id="fitTunerPanel" class="glass-card pe hidden absolute top-32 left-1/2 -translate-x-1/2 w-80 rounded-2xl p-4 shadow-2xl border border-cyan-500/30 slide-up z-20 text-white">
+    <div class="flex items-center justify-between border-b border-white/10 pb-2 mb-3">
+      <div class="flex items-center gap-2">
+        <span class="text-base">📐</span>
+        <span class="font-bold text-xs">Frame Sizing & Nose Bridge Fit</span>
+      </div>
+      <button id="btnCloseTuner" class="text-slate-400 hover:text-white text-xs font-bold p-1">✕</button>
+    </div>
+    <div class="space-y-3 text-xs">
+      <div>
+        <div class="flex justify-between text-[11px] text-slate-300 mb-1">
+          <span>Frame Width Scale:</span>
+          <span id="valScale" class="font-mono text-cyan-300">100%</span>
+        </div>
+        <input id="sliderScale" type="range" min="85" max="115" value="100" class="w-full accent-cyan-400 cursor-pointer">
+      </div>
+      <div>
+        <div class="flex justify-between text-[11px] text-slate-300 mb-1">
+          <span>Nose Bridge Height Offset:</span>
+          <span id="valYOffset" class="font-mono text-emerald-300">0.0 mm</span>
+        </div>
+        <input id="sliderYOffset" type="range" min="-15" max="15" value="0" class="w-full accent-emerald-400 cursor-pointer">
+      </div>
+      <div>
+        <div class="flex justify-between text-[11px] text-slate-300 mb-1">
+          <span>Manual Pupillary Distance (PD):</span>
+          <span id="valManualPd" class="font-mono text-amber-300">Auto (63 mm)</span>
+        </div>
+        <input id="sliderPd" type="range" min="56" max="72" value="63" class="w-full accent-amber-400 cursor-pointer">
+      </div>
+    </div>
+    <button id="btnResetTuning" class="mt-3 w-full py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-[11px] font-semibold text-slate-300">Reset to Auto-Fit</button>
+  </div>
+
+  <!-- =========================================================================
+       BOTTOM DRAWER: FRAME CAROUSEL, COLORWAYS, LENS TINTS & SNAP ACTION
+       ========================================================================= -->
+  <footer class="absolute bottom-0 inset-x-0 glass-panel pe pb-4 pt-3.5 px-3 sm:px-6 shadow-2xl z-10" style="padding-bottom:max(1rem,env(safe-area-inset-bottom))">
+    
+    <!-- Top Row in Footer: Active Frame Info + Lens & Color Pickers -->
+    <div class="max-w-4xl mx-auto flex flex-col md:flex-row items-center justify-between gap-3 mb-3 pb-2.5 border-b border-white/10">
+      
+      <!-- Current Model Headline -->
+      <div class="w-full md:w-auto flex items-center justify-between md:justify-start gap-3">
+        <div>
+          <div class="flex items-center gap-2">
+            <h2 id="activeModelName" class="font-display font-bold text-sm sm:text-base text-white tracking-wide">Vincent Chase Wayfarer</h2>
+            <span id="activeModelPrice" class="font-mono text-xs sm:text-sm text-emerald-400 font-bold bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">₹ 1,999</span>
+          </div>
+          <p id="activeModelSub" class="text-[10px] sm:text-[11px] text-slate-400">Classic Italian Acetate · Polarized UV400</p>
+        </div>
+
+        <!-- Capture / Snap Action Button -->
+        <div class="flex items-center gap-2">
+          <button id="btnSaveLook" class="px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-semibold flex items-center gap-1 active:scale-95 transition-all shadow-md" title="Save this look for 4-way comparison">
+            <span>⭐</span><span class="hidden sm:inline">Save Look</span>
+          </button>
+          <button id="btnCapturePhoto" class="px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-white font-bold text-xs sm:text-sm flex items-center gap-1.5 active:scale-95 transition-all shadow-xl shadow-cyan-500/25">
+            <span>📸</span><span>Snap Photo</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Colors & Lens Tints -->
+      <div class="w-full md:w-auto flex items-center justify-between md:justify-end gap-4 overflow-x-auto no-scroll">
+        <!-- Frame Color Dots -->
+        <div class="flex items-center gap-1.5 shrink-0">
+          <span class="text-[10px] text-slate-400 font-semibold uppercase tracking-wider mr-1">Finish:</span>
+          <div id="colorDotsWrap" class="flex items-center gap-2">
+            <!-- Injected dynamically -->
+          </div>
+        </div>
+
+        <!-- Lens Coatings -->
+        <div class="flex items-center gap-1.5 shrink-0">
+          <span class="text-[10px] text-slate-400 font-semibold uppercase tracking-wider mr-1">Lens:</span>
+          <div id="lensChipsWrap" class="flex items-center gap-1.5">
+            <!-- Injected dynamically -->
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Transitions UV Slider (shows only when Photochromic lens is picked) -->
+    <div id="photochromicWrap" class="hidden max-w-4xl mx-auto mb-2 px-2 py-1.5 rounded-xl bg-white/5 border border-white/10 flex items-center justify-between text-xs text-slate-300">
+      <div class="flex items-center gap-2">
+        <span>☀️</span>
+        <span class="text-[11px] font-semibold">Simulate Outdoor UV Sun Exposure:</span>
+      </div>
+      <div class="flex items-center gap-2 w-48 sm:w-64">
+        <span class="text-[10px] text-slate-400">Indoor</span>
+        <input id="sliderUv" type="range" min="0" max="100" value="0" class="w-full accent-cyan-400 cursor-pointer">
+        <span class="text-[10px] text-slate-400">Outdoor</span>
+      </div>
+    </div>
+
+    <!-- Bottom Row: Horizontal Scroll Frame Collection Carousel -->
+    <div class="max-w-5xl mx-auto overflow-x-auto no-scroll py-1">
+      <div id="frameCarousel" class="flex items-center gap-3 px-1">
+        <!-- Injected dynamically from EYEWEAR_CATALOG -->
+      </div>
+    </div>
+  </footer>
+
+  <!-- =========================================================================
+       AI STYLIST MODAL (Face Shape Analysis & Stylist Recommendations)
+       ========================================================================= -->
+  <div id="aiStylistModal" class="fixed inset-0 z-30 bg-black/75 backdrop-blur-md flex items-center justify-center p-4 hidden">
+    <div class="glass-card pe w-full max-w-lg rounded-3xl p-5 sm:p-6 shadow-2xl border border-cyan-500/40 slide-up max-h-[90vh] overflow-y-auto no-scroll">
+      <div class="flex items-center justify-between border-b border-white/10 pb-3 mb-4">
+        <div class="flex items-center gap-2.5">
+          <div class="w-9 h-9 rounded-2xl bg-gradient-to-tr from-emerald-500 to-cyan-500 flex items-center justify-center text-lg shadow-lg">
+            ✨
+          </div>
+          <div>
+            <h3 class="font-display font-bold text-base sm:text-lg text-white">AI Face Shape & Style Advisor</h3>
+            <p class="text-[11px] text-cyan-400">Real-Time Anthropometric Computer Vision</p>
+          </div>
+        </div>
+        <button id="btnCloseAiModal" class="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white flex items-center justify-center font-bold text-sm">✕</button>
+      </div>
+
+      <!-- Detected Face Shape Banner -->
+      <div class="p-4 rounded-2xl bg-gradient-to-r from-cyan-950/60 to-indigo-950/60 border border-cyan-400/30 mb-4">
+        <div class="flex items-center justify-between mb-1">
+          <span class="text-xs uppercase tracking-wider text-slate-400 font-semibold">Your Detected Face Shape:</span>
+          <span id="modalShapeTitle" class="font-display font-extrabold text-sm sm:text-base text-cyan-300">Oval Face</span>
+        </div>
+        <p id="modalShapeReason" class="text-xs text-slate-300 leading-relaxed">
+          Balanced proportions with subtle cheekbone curves. Your facial symmetry is versatile and harmonizes beautifully with almost any frame!
+        </p>
+        <div class="grid grid-cols-3 gap-2 mt-3 pt-3 border-t border-white/10 text-center">
+          <div class="p-2 rounded-xl bg-black/30">
+            <div class="text-[10px] text-slate-400">Pupillary Distance</div>
+            <div id="modalPdVal" class="font-mono text-sm font-bold text-emerald-400">63 mm</div>
+          </div>
+          <div class="p-2 rounded-xl bg-black/30">
+            <div class="text-[10px] text-slate-400">Fit Category</div>
+            <div id="modalFitCat" class="text-xs font-bold text-cyan-300">Medium Fit</div>
+          </div>
+          <div class="p-2 rounded-xl bg-black/30">
+            <div class="text-[10px] text-slate-400">Top Match</div>
+            <div id="modalTopScore" class="font-mono text-sm font-bold text-amber-300">98% Match</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Top Recommended Frames List -->
+      <h4 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Curated Stylist Recommendations:</h4>
+      <div id="modalRecsList" class="space-y-2 mb-4">
+        <!-- Injected dynamically -->
+      </div>
+
+      <button id="btnApplyBestMatch" class="w-full py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-400 hover:to-emerald-400 text-white font-bold text-xs uppercase tracking-wider shadow-lg shadow-cyan-500/20 active:scale-95 transition-all">
+        Try On #1 Stylist Pick Now
+      </button>
+    </div>
+  </div>
+
+  <!-- =========================================================================
+       4-WAY LOOK COMPARISON MODAL
+       ========================================================================= -->
+  <div id="compareModal" class="fixed inset-0 z-30 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 hidden">
+    <div class="glass-card pe w-full max-w-4xl rounded-3xl p-5 sm:p-6 shadow-2xl border border-amber-500/40 slide-up max-h-[90vh] overflow-y-auto no-scroll">
+      <div class="flex items-center justify-between border-b border-white/10 pb-3 mb-4">
+        <div class="flex items-center gap-2.5">
+          <span class="text-xl">◫</span>
+          <div>
+            <h3 class="font-display font-bold text-base sm:text-lg text-white">4-Way Look Comparison</h3>
+            <p class="text-[11px] text-amber-400">Compare up to 4 saved styles side-by-side to choose your favorite!</p>
+          </div>
+        </div>
+        <button id="btnCloseCompare" class="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white flex items-center justify-center font-bold text-sm">✕</button>
+      </div>
+
+      <!-- 4-Grid Slots -->
+      <div id="compareGrid" class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+        <!-- Up to 4 snapshot cards -->
+      </div>
+
+      <div class="flex justify-between items-center pt-2 border-t border-white/10">
+        <button id="btnClearLooks" class="text-xs text-rose-400 hover:text-rose-300 font-semibold underline">Clear All Saved Looks</button>
+        <button id="btnShareComparison" class="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs active:scale-95 transition-all shadow-md">
+          Download Look Board
+        </button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- =========================================================================
+     THREE.JS & COMPUTER VISION AR SCRIPT
+     ========================================================================= -->
+<script type="module">
+import * as THREE from 'three';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import {
+  EYEWEAR_CATALOG,
+  COLOR_FINISHES,
+  LENS_COATINGS,
+  ProceduralEyewearBuilder,
+  HeadOccluder,
+  PoseFilter3D,
+  FaceShapeAI,
+  SyntheticDemoAvatar
+} from './lenskart-engine.js';
+
+/* --------------------------------------------------------------------------
+   0. PROCEDURAL SOUND SYNTHESIZER (Web Audio API)
+   -------------------------------------------------------------------------- */
+class SoundEngine {
+  constructor() {
+    this.ctx = null;
+    this.enabled = true;
+  }
+  init() {
+    if (!this.ctx) {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (AudioCtx) this.ctx = new AudioCtx();
+    }
+  }
+  playSnap() {
+    if (!this.enabled || !this.ctx) return;
+    try {
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(600, this.ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(120, this.ctx.currentTime + 0.08);
+      gain.gain.setValueAtTime(0.2, this.ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.08);
+      osc.connect(gain); gain.connect(this.ctx.destination);
+      osc.start(); osc.stop(this.ctx.currentTime + 0.08);
+    } catch {}
+  }
+  playChime() {
+    if (!this.enabled || !this.ctx) return;
+    try {
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(523.25, this.ctx.currentTime); // C5
+      osc.frequency.setValueAtTime(659.25, this.ctx.currentTime + 0.05); // E5
+      osc.frequency.setValueAtTime(783.99, this.ctx.currentTime + 0.1); // G5
+      gain.gain.setValueAtTime(0.18, this.ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.35);
+      osc.connect(gain); gain.connect(this.ctx.destination);
+      osc.start(); osc.stop(this.ctx.currentTime + 0.35);
+    } catch {}
+  }
+  playClick() {
+    if (!this.enabled || !this.ctx) return;
+    try {
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(900, this.ctx.currentTime);
+      gain.gain.setValueAtTime(0.1, this.ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.03);
+      osc.connect(gain); gain.connect(this.ctx.destination);
+      osc.start(); osc.stop(this.ctx.currentTime + 0.03);
+    } catch {}
+  }
+}
+const sfx = new SoundEngine();
+
+/* --------------------------------------------------------------------------
+   1. GLOBAL STATE
+   -------------------------------------------------------------------------- */
+const state = {
+  mode: 'camera', // 'camera' or 'demo'
+  inspect3D: false,
+  activeModelIndex: 0,
+  activeColor: COLOR_FINISHES[0].hex,
+  activeColorType: COLOR_FINISHES[0].type,
+  activeLensId: LENS_COATINGS[0].id,
+  photochromicUV: 0.0,
+  
+  // Tuning adjustments
+  scaleMultiplier: 1.0,
+  yOffsetMm: 0.0,
+  manualPd: null,
+
+  // Face Tracking Status
+  faceLocked: false,
+  faceLostCount: 0,
+  detectedShape: 'Oval',
+  detectedPd: 63,
+  fps: 60,
+
+  // Saved Looks
+  savedLooks: []
+};
+
+/* --------------------------------------------------------------------------
+   2. DOM ELEMENTS
+   -------------------------------------------------------------------------- */
+const el = {
+  video: document.getElementById('webcamVideo'),
+  canvas: document.getElementById('threeCanvas'),
+  fpsCounter: document.getElementById('fpsCounter'),
+  faceShapeBadge: document.getElementById('faceShapeBadge'),
+  pdMetricBadge: document.getElementById('pdMetricBadge'),
+  faceOval: document.getElementById('faceOval'),
+  guideText: document.getElementById('guideText'),
+  lockDot: document.getElementById('lockDot'),
+  lockMsg: document.getElementById('lockMsg'),
+  fitToast: document.getElementById('fitToast'),
+  fitText: document.getElementById('fitText'),
+  activeModelName: document.getElementById('activeModelName'),
+  activeModelPrice: document.getElementById('activeModelPrice'),
+  activeModelSub: document.getElementById('activeModelSub'),
+  colorDotsWrap: document.getElementById('colorDotsWrap'),
+  lensChipsWrap: document.getElementById('lensChipsWrap'),
+  photochromicWrap: document.getElementById('photochromicWrap'),
+  sliderUv: document.getElementById('sliderUv'),
+  frameCarousel: document.getElementById('frameCarousel'),
+  btnCapturePhoto: document.getElementById('btnCapturePhoto'),
+  btnSaveLook: document.getElementById('btnSaveLook'),
+  btnCompare: document.getElementById('btnCompare'),
+  compareCount: document.getElementById('compareCount'),
+  btnInspect3D: document.getElementById('btnInspect3D'),
+  btnToggleSource: document.getElementById('btnToggleSource'),
+  sourceIcon: document.getElementById('sourceIcon'),
+  btnToggleAudio: document.getElementById('btnToggleAudio'),
+  btnAiStylist: document.getElementById('btnAiStylist'),
+  btnFineTune: document.getElementById('btnFineTune'),
+  fitTunerPanel: document.getElementById('fitTunerPanel'),
+  btnCloseTuner: document.getElementById('btnCloseTuner'),
+  sliderScale: document.getElementById('sliderScale'),
+  valScale: document.getElementById('valScale'),
+  sliderYOffset: document.getElementById('sliderYOffset'),
+  valYOffset: document.getElementById('valYOffset'),
+  sliderPd: document.getElementById('sliderPd'),
+  valManualPd: document.getElementById('valManualPd'),
+  btnResetTuning: document.getElementById('btnResetTuning'),
+  aiStylistModal: document.getElementById('aiStylistModal'),
+  btnCloseAiModal: document.getElementById('btnCloseAiModal'),
+  modalShapeTitle: document.getElementById('modalShapeTitle'),
+  modalShapeReason: document.getElementById('modalShapeReason'),
+  modalPdVal: document.getElementById('modalPdVal'),
+  modalFitCat: document.getElementById('modalFitCat'),
+  modalTopScore: document.getElementById('modalTopScore'),
+  modalRecsList: document.getElementById('modalRecsList'),
+  btnApplyBestMatch: document.getElementById('btnApplyBestMatch'),
+  compareModal: document.getElementById('compareModal'),
+  btnCloseCompare: document.getElementById('btnCloseCompare'),
+  compareGrid: document.getElementById('compareGrid'),
+  btnClearLooks: document.getElementById('btnClearLooks'),
+  btnShareComparison: document.getElementById('btnShareComparison'),
+  shutterFlash: document.getElementById('shutterFlash')
+};
+
+/* --------------------------------------------------------------------------
+   3. THREE.JS INITIALIZATION
+   -------------------------------------------------------------------------- */
+const renderer = new THREE.WebGLRenderer({
+  canvas: el.canvas,
+  alpha: true,
+  antialias: true,
+  powerPreference: 'high-performance'
+});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.1;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+const scene = new THREE.Scene();
+
+// Camera setup: Match field of view to typical phone / webcam front camera (~50 deg)
+const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 100);
+camera.position.set(0, 0, 5);
+
+// OrbitControls for 3D Inspect Mode
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.05;
+controls.enabled = false; // Enabled only in inspect3D mode
+
+// Environment lighting
+const pmremGenerator = new THREE.PMREMGenerator(renderer);
+pmremGenerator.compileEquirectangularShader();
+const roomEnv = new RoomEnvironment();
+scene.environment = pmremGenerator.fromScene(roomEnv).texture;
+
+// Studio Lights
+const ambientLight = new THREE.AmbientLight(0xffffff, 1.2);
+scene.add(ambientLight);
+
+const dirLight = new THREE.DirectionalLight(0xfff8ee, 2.2);
+dirLight.position.set(2, 4, 3);
+dirLight.castShadow = true;
+scene.add(dirLight);
+
+const fillLight = new THREE.DirectionalLight(0xdbeafe, 1.0);
+fillLight.position.set(-2, 1, 2);
+scene.add(fillLight);
+
+// Eyewear Builder & Anchor Group
+const eyewearBuilder = new ProceduralEyewearBuilder();
+const poseFilter = new PoseFilter3D();
+
+// Root container for 3D glasses & head occluder
+const glassesAnchor = new THREE.Group();
+glassesAnchor.name = 'glasses_anchor';
+scene.add(glassesAnchor);
+
+// Add Head Occluder (hides arms behind head when user turns)
+const headOccluder = HeadOccluder.createOccluder();
+glassesAnchor.add(headOccluder);
+
+// Synthetic Mannequin Head (Used in Demo Mode)
+const demoAvatar = SyntheticDemoAvatar.createMannequin();
+demoAvatar.visible = false;
+scene.add(demoAvatar);
+
+// Active Eyewear Mesh
+let currentEyewearMesh = null;
+
+function loadEyewearModel(index) {
+  const model = EYEWEAR_CATALOG[index];
+  state.activeModelIndex = index;
+
+  if (currentEyewearMesh) {
+    glassesAnchor.remove(currentEyewearMesh);
+    currentEyewearMesh.traverse(child => {
+      if (child.isMesh) {
+        child.geometry.dispose();
+      }
+    });
+  }
+
+  currentEyewearMesh = eyewearBuilder.createEyewear(model, state.activeColor, state.activeLensId);
+  glassesAnchor.add(currentEyewearMesh);
+
+  // Update UI Headline
+  el.activeModelName.textContent = model.name;
+  el.activeModelPrice.textContent = model.price;
+  el.activeModelSub.textContent = model.subtitle;
+
+  // Highlight active carousel card
+  document.querySelectorAll('.frame-card').forEach((card, i) => {
+    card.classList.toggle('active', i === index);
+  });
+
+  sfx.playSnap();
+}
+
+/* --------------------------------------------------------------------------
+   4. MEDIAPIPE FACE MESH & WEBCAM TRACKING
+   -------------------------------------------------------------------------- */
+let faceMeshInstance = null;
+let mpCamera = null;
+
+function initFaceMesh() {
+  faceMeshInstance = new FaceMesh({
+    locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
+  });
+
+  faceMeshInstance.setOptions({
+    maxNumFaces: 1,
+    refineLandmarks: true,
+    minDetectionConfidence: 0.5,
+    minTrackingConfidence: 0.5
+  });
+
+  faceMeshInstance.onResults(onFaceMeshResults);
+
+  // Start webcam
+  mpCamera = new Camera(el.video, {
+    onFrame: async () => {
+      if (state.mode === 'camera') {
+        await faceMeshInstance.send({ image: el.video });
+      }
+    },
+    width: 1280,
+    height: 720
+  });
+
+  mpCamera.start().then(() => {
+    console.log('Webcam & MediaPipe camera started.');
+  }).catch((err) => {
+    console.warn('Webcam permission denied or unavailable, switching to Demo Mode:', err);
+    setMode('demo');
+  });
+}
+
+/**
+ * High-Precision Face Mesh Landmark Solver
+ * Fixes glasses instantly on the nose bridge and eyes with One-Euro smoothing!
+ */
+function onFaceMeshResults(results) {
+  if (state.mode !== 'camera' || state.inspect3D) return;
+
+  if (!results.multiFaceLandmarks || results.multiFaceLandmarks.length === 0) {
+    state.faceLostCount++;
+    if (state.faceLostCount > 10) {
+      if (state.faceLocked) {
+        state.faceLocked = false;
+        el.faceOval.classList.remove('glow-locked', 'border-emerald-400');
+        el.faceOval.classList.add('border-cyan-400/50');
+        el.lockDot.className = 'w-2 h-2 rounded-full bg-amber-400 inline-block animate-ping';
+        el.lockMsg.textContent = 'Looking for face…';
+        el.guideText.textContent = 'Position Face in Oval';
+        el.fitToast.classList.add('hidden');
+        glassesAnchor.visible = false;
+      }
+    }
+    return;
+  }
+
+  // Face Detected!
+  state.faceLostCount = 0;
+  const landmarks = results.multiFaceLandmarks[0];
+
+  // If first detection after lost, snap instantly without lag!
+  if (!state.faceLocked) {
+    state.faceLocked = true;
+    poseFilter.reset(); // Instant snap!
+    el.faceOval.classList.add('glow-locked', 'border-emerald-400');
+    el.faceOval.classList.remove('border-cyan-400/50');
+    el.lockDot.className = 'w-2 h-2 rounded-full bg-emerald-400 inline-block';
+    el.lockMsg.textContent = 'Instant Lock ✓';
+    el.guideText.textContent = 'Tracked at 60 FPS';
+    el.fitToast.classList.remove('hidden');
+    glassesAnchor.visible = true;
+    sfx.playChime();
+  }
+
+  // Run AI Face Shape & PD Analysis
+  const analysis = FaceShapeAI.analyzeFace(landmarks, el.video.videoWidth || 1280, el.video.videoHeight || 720);
+  if (analysis) {
+    state.detectedShape = analysis.faceShape;
+    state.detectedPd = state.manualPd || analysis.pdMm;
+    el.faceShapeBadge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> ${analysis.faceShape} Face · Top Fit`;
+    el.pdMetricBadge.textContent = `PD: ${state.detectedPd} mm`;
+    el.fitText.textContent = `Instant Face Lock · ${analysis.faceShape} Face · ${analysis.fitCategory}`;
+  }
+
+  // 3D Anchor Coordinate Solver
+  // Landmarks:
+  // 168: Mid Glabella (Nose Bridge top)
+  // 6: Mid Nose
+  // 33: Right Eye Outer, 263: Left Eye Outer
+  // 133: Right Eye Inner, 362: Left Eye Inner
+  // 4: Nose Tip
+  // Note: Video is mirrored horizontally (scaleX(-1)), so Landmark X is flipped: X_mirrored = 1.0 - X_raw
+  const pBridge = landmarks[168];
+  const pRightOuter = landmarks[33];
+  const pLeftOuter = landmarks[263];
+  const pNoseTip = landmarks[4];
+
+  // Visible frustum dimensions at target depth Z
+  const targetZ = 3.6; // Distance from camera
+  const vFovRad = THREE.MathUtils.degToRad(camera.fov);
+  const visibleHeight = 2 * Math.tan(vFovRad / 2) * targetZ;
+  const visibleWidth = visibleHeight * camera.aspect;
+
+  // Convert normalized [0, 1] video coords to Three.js world space
+  // Mirror X so turning right in mirror turns right in 3D
+  const worldX = (0.5 - pBridge.x) * visibleWidth;
+  const worldY = -(pBridge.y - 0.5) * visibleHeight + (state.yOffsetMm / 100);
+  const worldZ = -pBridge.z * 1.5; // Depth relative to head center
+
+  const rawPos = new THREE.Vector3(worldX, worldY, worldZ);
+
+  // Calculate Roll (Rotation along Z axis - head tilting left/right)
+  const dxEye = (1.0 - pLeftOuter.x) - (1.0 - pRightOuter.x);
+  const dyEye = -(pLeftOuter.y - pRightOuter.y);
+  const roll = Math.atan2(dyEye, dxEye);
+
+  // Calculate Yaw (Rotation along Y axis - looking left/right)
+  const dzEye = (pLeftOuter.z - pRightOuter.z);
+  const yaw = Math.atan2(dzEye, dxEye) * 1.8;
+
+  // Calculate Pitch (Rotation along X axis - nodding up/down)
+  const dyNose = -(pNoseTip.y - pBridge.y);
+  const dzNose = (pNoseTip.z - pBridge.z);
+  const pitch = Math.atan2(dzNose, dyNose) * 1.2 - 0.15;
+
+  const rawRot = new THREE.Euler(pitch, yaw, roll, 'YXZ');
+
+  // Scale based on eye distance & user fine-tune multiplier
+  const eyeDistNorm = Math.hypot((pLeftOuter.x - pRightOuter.x), (pLeftOuter.y - pRightOuter.y));
+  const baseScale = (eyeDistNorm * 3.8) * state.scaleMultiplier;
+
+  // Apply One-Euro Adaptive Low-Pass Filter (eliminates jitter completely!)
+  const filtered = poseFilter.filter(rawPos, rawRot, baseScale, performance.now());
+
+  // Apply to Three.js Eyewear Group
+  glassesAnchor.position.copy(filtered.pos);
+  glassesAnchor.rotation.copy(filtered.rot);
+  glassesAnchor.scale.setScalar(filtered.scale);
+
+  // Adjust occluder scale to match head
+  headOccluder.scale.set(filtered.scale * 1.1, filtered.scale * 1.2, filtered.scale * 1.1);
+}
+
+/* --------------------------------------------------------------------------
+   5. DEMO & 3D STUDIO INSPECT MODES
+   -------------------------------------------------------------------------- */
+let demoClock = 0;
+
+function setMode(newMode) {
+  state.mode = newMode;
+  if (newMode === 'demo') {
+    el.video.classList.add('hidden');
+    demoAvatar.visible = true;
+    glassesAnchor.visible = true;
+    el.sourceIcon.textContent = '👤';
+    el.guideText.textContent = '3D Mannequin Demo Active';
+    el.lockDot.className = 'w-2 h-2 rounded-full bg-indigo-400 inline-block';
+    el.lockMsg.textContent = 'Synthetic 3D Simulation';
+    el.faceOval.classList.add('opacity-40');
+    el.faceShapeBadge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-indigo-400"></span> Oval Mannequin`;
+    el.pdMetricBadge.textContent = `PD: 63 mm`;
+    el.fitToast.classList.remove('hidden');
+    el.fitText.textContent = '3D Studio Avatar Simulation Active';
+  } else {
+    el.video.classList.remove('hidden');
+    demoAvatar.visible = false;
+    el.sourceIcon.textContent = '📷';
+    el.faceOval.classList.remove('opacity-40');
+    state.faceLocked = false;
+  }
+}
+
+function toggleInspect3D() {
+  state.inspect3D = !state.inspect3D;
+  controls.enabled = state.inspect3D;
+
+  if (state.inspect3D) {
+    el.btnInspect3D.classList.add('bg-indigo-500/30', 'border-indigo-400');
+    el.faceOval.classList.add('hidden');
+    demoAvatar.visible = false;
+    glassesAnchor.position.set(0, 0, 0);
+    glassesAnchor.rotation.set(0, 0, 0);
+    glassesAnchor.scale.setScalar(1.4);
+    camera.position.set(0, 0, 3.2);
+    controls.reset();
+    el.fitToast.classList.remove('hidden');
+    el.fitText.textContent = '360° Studio Inspect: Drag to spin, pinch to zoom';
+  } else {
+    el.btnInspect3D.classList.remove('bg-indigo-500/30', 'border-indigo-400');
+    el.faceOval.classList.remove('hidden');
+    camera.position.set(0, 0, 5);
+    camera.lookAt(0, 0, 0);
+    if (state.mode === 'demo') setMode('demo');
+    else setMode('camera');
+  }
+}
+
+/* --------------------------------------------------------------------------
+   6. UI POPULATION & EVENT LISTENERS
+   -------------------------------------------------------------------------- */
+function buildUI() {
+  // 1. Build Color Dots
+  el.colorDotsWrap.innerHTML = '';
+  COLOR_FINISHES.forEach((col, i) => {
+    const dot = document.createElement('button');
+    dot.className = `color-dot w-5 h-5 rounded-full border border-white/40 active:scale-90 transition-transform ${i === 0 ? 'active' : ''}`;
+    dot.style.background = col.hex;
+    dot.title = col.name;
+    dot.onclick = () => {
+      document.querySelectorAll('.color-dot').forEach(d => d.classList.remove('active'));
+      dot.classList.add('active');
+      state.activeColor = col.hex;
+      state.activeColorType = col.type;
+      if (currentEyewearMesh?.userData?.updateColor) {
+        currentEyewearMesh.userData.updateColor(col.hex, col.type);
+      }
+      sfx.playClick();
+    };
+    el.colorDotsWrap.appendChild(dot);
+  });
+
+  // 2. Build Lens Chips
+  el.lensChipsWrap.innerHTML = '';
+  LENS_COATINGS.forEach((lens, i) => {
+    const chip = document.createElement('button');
+    chip.className = `lens-chip text-[10px] px-2.5 py-1 rounded-full border border-white/20 text-slate-300 hover:text-white transition-all active:scale-95 ${i === 0 ? 'active' : ''}`;
+    chip.textContent = lens.name.split(' ')[0];
+    chip.title = `${lens.name} — ${lens.desc}`;
+    chip.onclick = () => {
+      document.querySelectorAll('.lens-chip').forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+      state.activeLensId = lens.id;
+      if (currentEyewearMesh?.userData?.updateLens) {
+        currentEyewearMesh.userData.updateLens(lens.id);
+      }
+      el.photochromicWrap.classList.toggle('hidden', lens.id !== 'photochromic');
+      sfx.playClick();
+    };
+    el.lensChipsWrap.appendChild(chip);
+  });
+
+  // 3. Build Frame Carousel
+  el.frameCarousel.innerHTML = '';
+  EYEWEAR_CATALOG.forEach((item, index) => {
+    const card = document.createElement('div');
+    card.className = `frame-card pe shrink-0 w-44 sm:w-48 glass-card rounded-2xl p-2.5 cursor-pointer border border-white/10 ${index === 0 ? 'active' : ''}`;
+    
+    // Determine top match badge
+    const isTopMatch = item.matchScores['Oval'] >= 97;
+
+    card.innerHTML = `
+      <div class="flex items-center justify-between mb-1.5">
+        <span class="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${isTopMatch ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' : 'bg-white/10 text-slate-300'}">
+          ${isTopMatch ? '⭐ Stylist Pick' : item.type}
+        </span>
+        <span class="font-mono text-xs font-bold text-emerald-400">${item.price}</span>
+      </div>
+      <div class="font-display font-bold text-xs text-white truncate">${item.name}</div>
+      <div class="text-[9px] text-slate-400 truncate mb-1.5">${item.subtitle}</div>
+      <div class="flex items-center justify-between pt-1 border-t border-white/10 text-[9px] text-slate-400">
+        <span>Width: ${item.widthMm}mm</span>
+        <span class="text-cyan-300 font-semibold font-mono">${item.matchScores['Oval']}% Match</span>
+      </div>
+    `;
+
+    card.onclick = () => loadEyewearModel(index);
+    el.frameCarousel.appendChild(card);
+  });
+}
+
+// Sliders and Interactive Adjusters
+el.sliderScale.oninput = (e) => {
+  const val = parseInt(e.target.value);
+  state.scaleMultiplier = val / 100;
+  el.valScale.textContent = `${val}%`;
+};
+el.sliderYOffset.oninput = (e) => {
+  const val = parseFloat(e.target.value);
+  state.yOffsetMm = val;
+  el.valYOffset.textContent = `${val > 0 ? '+' : ''}${val.toFixed(1)} mm`;
+};
+el.sliderPd.oninput = (e) => {
+  const val = parseInt(e.target.value);
+  state.manualPd = val;
+  el.valManualPd.textContent = `${val} mm (Manual)`;
+  el.pdMetricBadge.textContent = `PD: ${val} mm`;
+};
+el.btnResetTuning.onclick = () => {
+  state.scaleMultiplier = 1.0;
+  state.yOffsetMm = 0.0;
+  state.manualPd = null;
+  el.sliderScale.value = 100; el.valScale.textContent = '100%';
+  el.sliderYOffset.value = 0; el.valYOffset.textContent = '0.0 mm';
+  el.sliderPd.value = 63; el.valManualPd.textContent = 'Auto (63 mm)';
+  sfx.playClick();
+};
+
+el.sliderUv.oninput = (e) => {
+  const factor = parseInt(e.target.value) / 100;
+  state.photochromicUV = factor;
+  if (currentEyewearMesh?.userData?.setPhotochromicAlpha) {
+    currentEyewearMesh.userData.setPhotochromicAlpha(factor);
+  }
+};
+
+// Modals and Drawers
+el.btnFineTune.onclick = () => el.fitTunerPanel.classList.toggle('hidden');
+el.btnCloseTuner.onclick = () => el.fitTunerPanel.classList.add('hidden');
+el.btnInspect3D.onclick = toggleInspect3D;
+el.btnToggleSource.onclick = () => {
+  sfx.playClick();
+  setMode(state.mode === 'camera' ? 'demo' : 'camera');
+};
+el.btnToggleAudio.onclick = () => {
+  sfx.enabled = !sfx.enabled;
+  el.btnToggleAudio.textContent = sfx.enabled ? '🔊' : '🔇';
+};
+
+// AI Stylist Modal
+el.btnAiStylist.onclick = () => {
+  sfx.playChime();
+  const shape = state.detectedShape || 'Oval';
+  el.modalShapeTitle.textContent = `${shape} Face`;
+  el.modalPdVal.textContent = `${state.detectedPd} mm`;
+  el.modalFitCat.textContent = state.detectedPd < 60 ? 'Narrow Fit' : (state.detectedPd > 66 ? 'Wide Fit' : 'Medium Fit');
+
+  // Sort catalog by match score for this shape
+  const sorted = [...EYEWEAR_CATALOG].sort((a, b) => (b.matchScores[shape] || 80) - (a.matchScores[shape] || 80));
+  el.modalTopScore.textContent = `${sorted[0].matchScores[shape]}% Match`;
+
+  el.modalRecsList.innerHTML = '';
+  sorted.slice(0, 3).forEach((item, idx) => {
+    const recCard = document.createElement('div');
+    recCard.className = 'p-3 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-between hover:bg-white/10 cursor-pointer transition-colors';
+    recCard.innerHTML = `
+      <div>
+        <div class="flex items-center gap-1.5">
+          <span class="text-xs font-bold text-white">${item.name}</span>
+          <span class="text-[9px] font-bold text-amber-400 bg-amber-500/10 px-1.5 rounded">${item.matchScores[shape]}% Match</span>
+        </div>
+        <div class="text-[10px] text-slate-400">${item.subtitle}</div>
+      </div>
+      <button class="px-2.5 py-1 rounded-lg bg-cyan-500/20 text-cyan-300 font-bold text-[10px]">Try On</button>
+    `;
+    recCard.onclick = () => {
+      const origIndex = EYEWEAR_CATALOG.findIndex(m => m.id === item.id);
+      loadEyewearModel(origIndex);
+      el.aiStylistModal.classList.add('hidden');
+    };
+    el.modalRecsList.appendChild(recCard);
+  });
+
+  el.btnApplyBestMatch.onclick = () => {
+    const bestIndex = EYEWEAR_CATALOG.findIndex(m => m.id === sorted[0].id);
+    loadEyewearModel(bestIndex);
+    el.aiStylistModal.classList.add('hidden');
+  };
+
+  el.aiStylistModal.classList.remove('hidden');
+};
+el.btnCloseAiModal.onclick = () => el.aiStylistModal.classList.add('hidden');
+
+// Snapshot & Photo Capture (Merges Camera Feed + 3D Render Canvas + Watermark)
+el.btnCapturePhoto.onclick = () => {
+  sfx.playSnap();
+  el.shutterFlash.classList.add('flash');
+  setTimeout(() => el.shutterFlash.classList.remove('flash'), 120);
+
+  // Render merged canvas
+  const outCanvas = document.createElement('canvas');
+  outCanvas.width = 1280;
+  outCanvas.height = 720;
+  const ctx = outCanvas.getContext('2d');
+
+  // Draw camera or demo background
+  if (state.mode === 'camera' && el.video.videoWidth) {
+    ctx.save();
+    ctx.translate(1280, 0);
+    ctx.scale(-1, 1); // Mirrored image
+    ctx.drawImage(el.video, 0, 0, 1280, 720);
+    ctx.restore();
+  } else {
+    ctx.fillStyle = '#0f172a';
+    ctx.fillRect(0, 0, 1280, 720);
+  }
+
+  // Draw 3D Glasses Canvas
+  ctx.drawImage(el.canvas, 0, 0, 1280, 720);
+
+  // Draw Lenskart Watermark Banner
+  ctx.fillStyle = 'rgba(7, 10, 18, 0.82)';
+  ctx.fillRect(0, 640, 1280, 80);
+
+  ctx.fillStyle = '#00bac7';
+  ctx.font = 'bold 24px "Outfit", sans-serif';
+  ctx.fillText('LENSKART 3D AR STUDIO', 30, 688);
+
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '16px "Plus Jakarta Sans", sans-serif';
+  const activeModel = EYEWEAR_CATALOG[state.activeModelIndex];
+  ctx.fillText(`${activeModel.name} · ${activeModel.price} · PD: ${state.detectedPd}mm`, 420, 688);
+
+  ctx.fillStyle = '#94a3b8';
+  ctx.font = '14px monospace';
+  ctx.fillText(new Date().toLocaleDateString(), 1150, 688);
+
+  // Download Image
+  const a = document.createElement('a');
+  a.download = `Lenskart_3D_TryOn_${activeModel.id}.png`;
+  a.href = outCanvas.toDataURL('image/png');
+  a.click();
+};
+
+// 4-Way Look Comparison
+el.btnSaveLook.onclick = () => {
+  if (state.savedLooks.length >= 4) {
+    alert('Maximum 4 looks saved! Open "Compare" to view your look board.');
+    return;
+  }
+  sfx.playChime();
+  const currentModel = EYEWEAR_CATALOG[state.activeModelIndex];
+  
+  // Create thumbnail
+  const thumbCanvas = document.createElement('canvas');
+  thumbCanvas.width = 320;
+  thumbCanvas.height = 240;
+  const tCtx = thumbCanvas.getContext('2d');
+  if (state.mode === 'camera' && el.video.videoWidth) {
+    tCtx.save(); tCtx.translate(320, 0); tCtx.scale(-1, 1);
+    tCtx.drawImage(el.video, 0, 0, 320, 240);
+    tCtx.restore();
+  } else {
+    tCtx.fillStyle = '#1e293b'; tCtx.fillRect(0, 0, 320, 240);
+  }
+  tCtx.drawImage(el.canvas, 0, 0, 320, 240);
+
+  state.savedLooks.push({
+    model: currentModel,
+    colorHex: state.activeColor,
+    lensId: state.activeLensId,
+    thumbData: thumbCanvas.toDataURL('image/jpeg', 0.85)
+  });
+
+  el.compareCount.textContent = state.savedLooks.length;
+  el.btnSaveLook.classList.add('bg-emerald-500/20', 'text-emerald-300');
+  setTimeout(() => el.btnSaveLook.classList.remove('bg-emerald-500/20', 'text-emerald-300'), 1000);
+};
+
+el.btnCompare.onclick = () => {
+  if (state.savedLooks.length === 0) {
+    alert('No looks saved yet! Tap "⭐ Save Look" on any frame to add to your 4-way comparison.');
+    return;
+  }
+  sfx.playClick();
+  el.compareGrid.innerHTML = '';
+  state.savedLooks.forEach((look, i) => {
+    const card = document.createElement('div');
+    card.className = 'glass-card rounded-2xl p-2.5 border border-white/10 text-center';
+    card.innerHTML = `
+      <img src="${look.thumbData}" class="w-full h-32 object-cover rounded-xl mb-2 border border-white/10 shadow-md">
+      <div class="font-display font-bold text-xs text-white truncate">${look.model.name}</div>
+      <div class="font-mono text-[11px] text-emerald-400 font-bold mb-1.5">${look.model.price}</div>
+      <button class="w-full py-1 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 font-semibold text-[10px] active:scale-95 transition-all">Try On Now</button>
+    `;
+    card.querySelector('button').onclick = () => {
+      const idx = EYEWEAR_CATALOG.findIndex(m => m.id === look.model.id);
+      loadEyewearModel(idx);
+      el.compareModal.classList.add('hidden');
+    };
+    el.compareGrid.appendChild(card);
+  });
+  el.compareModal.classList.remove('hidden');
+};
+el.btnCloseCompare.onclick = () => el.compareModal.classList.add('hidden');
+el.btnClearLooks.onclick = () => {
+  state.savedLooks = [];
+  el.compareCount.textContent = '0';
+  el.compareModal.classList.add('hidden');
+};
+
+/* --------------------------------------------------------------------------
+   7. MAIN ANIMATION & RENDERING LOOP
+   -------------------------------------------------------------------------- */
+let lastTime = performance.now();
+let frameCount = 0;
+let lastFpsUpdate = performance.now();
+
+function animate() {
+  requestAnimationFrame(animate);
+
+  const now = performance.now();
+  const dt = Math.min((now - lastTime) / 1000, 0.05);
+  lastTime = now;
+
+  // FPS Counter
+  frameCount++;
+  if (now - lastFpsUpdate > 1000) {
+    state.fps = Math.round((frameCount * 1000) / (now - lastFpsUpdate));
+    el.fpsCounter.textContent = `${state.fps} FPS`;
+    frameCount = 0;
+    lastFpsUpdate = now;
+  }
+
+  // Handle Demo Mode Head Sway Motion
+  if (state.mode === 'demo' && !state.inspect3D) {
+    demoClock += dt * 1.2;
+    const swayYaw = Math.sin(demoClock) * 0.22;
+    const swayPitch = Math.cos(demoClock * 0.8) * 0.12 - 0.05;
+    const swayRoll = Math.sin(demoClock * 0.6) * 0.05;
+
+    demoAvatar.position.set(0, -0.2, 0);
+    demoAvatar.rotation.set(swayPitch, swayYaw, swayRoll);
+
+    // Anchor glasses to demo head with nose bridge offset
+    glassesAnchor.position.set(Math.sin(demoClock) * 0.06, -0.15 + (state.yOffsetMm / 100), 0.38);
+    glassesAnchor.rotation.set(swayPitch, swayYaw, swayRoll);
+    glassesAnchor.scale.setScalar(1.2 * state.scaleMultiplier);
+  }
+
+  if (state.inspect3D) {
+    controls.update();
+  }
+
+  renderer.render(scene, camera);
+}
+
+// Window Resize Handler
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// Initialization
+buildUI();
+loadEyewearModel(0);
+initFaceMesh();
+animate();
+
+// Initialize sound on first user touch / click
+window.addEventListener('pointerdown', () => sfx.init(), { once: true });
+</script>
+</body>
+</html>

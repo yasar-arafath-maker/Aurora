@@ -234,76 +234,82 @@ class ForecastingService:
         w_hi  = float(max(wind, self._wind_q90.predict(X)[0]))
         return solar, wind, s_lo, s_hi, w_lo, w_hi
 
-    def predict_day(self, target_date: date) -> Dict[str, Any]:
-        """
-        Aggregate hourly predictions for a target date into daily totals.
-        Returns predicted kWh + confidence from interval width.
-        """
+    def predict_days_batch(self, target_dates: List[date]) -> List[Dict[str, Any]]:
+        """Vectorized prediction across multiple target dates in a single matrix pass."""
         if not self._is_trained:
             self.train()
 
-        # Build hourly feature rows for the target date using tomorrow's weather forecast
-        weather_fcst = get_weather_forecast_days(days=3)
-        target_weather = next(
-            (w for w in weather_fcst if w["date"] == target_date),
-            weather_fcst[0]
-        )
+        weather_fcst = get_weather_forecast_days(days=len(target_dates) + 3)
+        all_features = []
+        date_slices = []
+        cur_idx = 0
 
-        total_solar, total_wind = 0.0, 0.0
-        total_s_lo, total_s_hi = 0.0, 0.0
-        total_w_lo, total_w_hi = 0.0, 0.0
+        for t_date in target_dates:
+            target_weather = next((w for w in weather_fcst if w["date"] == t_date), weather_fcst[0])
+            dt = datetime.combine(t_date, datetime.min.time()).replace(tzinfo=timezone.utc)
+            for h in range(24):
+                row = {
+                    "timestamp": dt.replace(hour=h),
+                    "temperature": target_weather["avg_temp"] + (3 if h in range(10, 16) else -2),
+                    "humidity": 60.0,
+                    "cloud_cover": target_weather["cloud_cover_pct"],
+                    "wind_speed": target_weather["wind_speed_ms"],
+                    "solar_irradiance": solar_irradiance_wm2(
+                        h, target_weather["cloud_cover_pct"],
+                        dt.replace(hour=h).timetuple().tm_yday
+                    ),
+                }
+                all_features.append(_build_features(row))
+            date_slices.append((t_date, cur_idx, cur_idx + 24))
+            cur_idx += 24
 
-        dt = datetime.combine(target_date, datetime.min.time()).replace(tzinfo=timezone.utc)
-        for h in range(24):
-            row = {
-                "timestamp": dt.replace(hour=h),
-                "temperature": target_weather["avg_temp"] + (3 if h in range(10, 16) else -2),
-                "humidity": 60.0,
-                "cloud_cover": target_weather["cloud_cover_pct"],
-                "wind_speed": target_weather["wind_speed_ms"],
-                "solar_irradiance": solar_irradiance_wm2(
-                    h, target_weather["cloud_cover_pct"],
-                    dt.replace(hour=h).timetuple().tm_yday
-                ),
-            }
-            s, w, sl, sh, wl, wh = self._predict_single_hour(row)
-            total_solar += s
-            total_wind  += w
-            total_s_lo  += sl
-            total_s_hi  += sh
-            total_w_lo  += wl
-            total_w_hi  += wh
+        X_all = self._scaler.transform(all_features)
+        solar_preds = np.maximum(0, self._solar_model.predict(X_all))
+        wind_preds  = np.maximum(0, self._wind_model.predict(X_all))
+        s_lo_preds  = np.minimum(solar_preds, np.maximum(0, self._solar_q10.predict(X_all)))
+        s_hi_preds  = np.maximum(solar_preds, self._solar_q90.predict(X_all))
+        w_lo_preds  = np.minimum(wind_preds, np.maximum(0, self._wind_q10.predict(X_all)))
+        w_hi_preds  = np.maximum(wind_preds, self._wind_q90.predict(X_all))
 
-        # Confidence: based on normalized interval width (1 - width/mean, clamped)
-        s_interval = max(0, total_s_hi - total_s_lo)
-        w_interval = max(0, total_w_hi - total_w_lo)
-        total_mean = total_solar + total_wind
-        total_interval = s_interval + w_interval
-        confidence = max(45.0, min(96.0, 100.0 - (total_interval / max(1, total_mean)) * 100.0))
+        results = []
+        for t_date, start, end in date_slices:
+            s_sum = float(np.sum(solar_preds[start:end]))
+            w_sum = float(np.sum(wind_preds[start:end]))
+            s_lo_sum = float(np.sum(s_lo_preds[start:end]))
+            s_hi_sum = float(np.sum(s_hi_preds[start:end]))
+            w_lo_sum = float(np.sum(w_lo_preds[start:end]))
+            w_hi_sum = float(np.sum(w_hi_preds[start:end]))
 
-        # Expected demand (same demo formula for consistency)
-        now = datetime.now(timezone.utc)
-        expected_demand = sum(
-            demand_kwh(h, target_date.weekday(), target_date.month) for h in range(24)
-        )
+            s_interval = max(0, s_hi_sum - s_lo_sum)
+            w_interval = max(0, w_hi_sum - w_lo_sum)
+            total_mean = s_sum + w_sum
+            total_interval = s_interval + w_interval
+            confidence = max(45.0, min(96.0, 100.0 - (total_interval / max(1, total_mean)) * 100.0))
+            expected_demand = sum(demand_kwh(h, t_date.weekday(), t_date.month) for h in range(24))
 
-        return {
-            "target_date": target_date,
-            "predicted_solar_kwh": round(total_solar, 2),
-            "predicted_wind_kwh": round(total_wind, 2),
-            "predicted_total_kwh": round(total_solar + total_wind, 2),
-            "expected_demand_kwh": round(expected_demand, 2),
-            "confidence_pct": round(confidence, 1),
-            "confidence_interval_lower_kwh": round(total_s_lo + total_w_lo, 2),
-            "confidence_interval_upper_kwh": round(total_s_hi + total_w_hi, 2),
-            "model_version": self._model_version,
-            "created_at": datetime.now(timezone.utc),
-        }
+            results.append({
+                "target_date": t_date,
+                "predicted_solar_kwh": round(s_sum, 2),
+                "predicted_wind_kwh": round(w_sum, 2),
+                "predicted_total_kwh": round(s_sum + w_sum, 2),
+                "expected_demand_kwh": round(expected_demand, 2),
+                "confidence_pct": round(confidence, 1),
+                "confidence_interval_lower_kwh": round(s_lo_sum + w_lo_sum, 2),
+                "confidence_interval_upper_kwh": round(s_hi_sum + w_hi_sum, 2),
+                "model_version": self._model_version,
+                "created_at": datetime.now(timezone.utc),
+            })
+        return results
+
+    def predict_day(self, target_date: date) -> Dict[str, Any]:
+        """Aggregate hourly predictions for a single target date into daily totals."""
+        return self.predict_days_batch([target_date])[0]
 
     def predict_n_days(self, days: int = 7) -> List[Dict[str, Any]]:
-        """Predict for the next N days."""
+        """Predict for the next N days in high-speed vectorized batch."""
         today = date.today()
-        return [self.predict_day(today + timedelta(days=i+1)) for i in range(days)]
+        target_dates = [today + timedelta(days=i + 1) for i in range(days)]
+        return self.predict_days_batch(target_dates)
 
     @property
     def accuracy_metrics(self) -> Dict[str, Any]:

@@ -52,6 +52,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
   const [prediction, setPrediction] = useState<TomorrowPrediction | null>(null);
   const [alerts, setAlerts] = useState<SystemAlert[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
 
   // Dynamic Interactive Dashboard States
   const [timeHour, setTimeHour] = useState<number>(12); // 6 to 22 (12 PM default)
@@ -71,26 +72,27 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
     monthlySavingsNum: number;
   } | null>(null);
 
+  const loadDashboardData = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [optData, predData, alertData] = await Promise.all([
+        api.optimizeBattery(),
+        api.getTomorrowPrediction(),
+        api.getAlerts()
+      ]);
+      setOptimization(optData);
+      setPrediction(predData);
+      setAlerts(alertData);
+    } catch (err: any) {
+      console.error('Failed to fetch dashboard data:', err);
+      setError(err.message || 'Failed to connect to AURORA backend API');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    let active = true;
-    const loadDashboardData = async () => {
-      try {
-        const [optData, predData, alertData] = await Promise.all([
-          api.optimizeBattery(),
-          api.getTomorrowPrediction(),
-          api.getAlerts()
-        ]);
-        if (active) {
-          setOptimization(optData);
-          setPrediction(predData);
-          setAlerts(alertData);
-          setLoading(false);
-        }
-      } catch (err) {
-        console.error('Failed to fetch dashboard data:', err);
-        if (active) setLoading(false);
-      }
-    };
     loadDashboardData();
   }, []);
 
@@ -146,6 +148,31 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
 
   return (
     <div className="space-y-6 pb-12">
+      {/* Backend API Connection Error Banner */}
+      {error && (
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="scada-panel p-4 border-red-500/50 bg-red-950/30 flex items-center justify-between gap-4 shadow-lg"
+        >
+          <div className="flex items-center gap-3">
+            <AlertTriangle className="w-5 h-5 text-red-400 shrink-0" />
+            <div>
+              <p className="text-xs font-mono font-bold text-red-300">Live Backend API Connection Notice</p>
+              <p className="text-xs text-text-dim">{error}</p>
+            </div>
+          </div>
+          <button
+            onClick={loadDashboardData}
+            disabled={loading}
+            className="px-3 py-1.5 rounded bg-red-500/20 hover:bg-red-500/30 border border-red-500/40 text-red-200 font-mono text-xs flex items-center gap-1.5 transition-colors cursor-pointer shrink-0"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+            <span>{loading ? 'Retrying...' : 'Retry Connection'}</span>
+          </button>
+        </motion.div>
+      )}
+
       {/* ═══════════════════════════════════════════════════════════════════════
           HERO STATUS & INTERACTIVE ACTION CONTROL BAR
           ═══════════════════════════════════════════════════════════════════════ */}

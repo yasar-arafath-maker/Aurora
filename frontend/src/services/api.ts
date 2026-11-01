@@ -3,16 +3,23 @@
  * Connects to the FastAPI backend with token auth and fallback handling
  */
 
-const BASE_URL = '/api/v1';
+export const BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api/v1';
 
 export interface WeatherCurrent {
   timestamp: string;
+  temperature?: number;
   temperature_c: number;
+  cloud_cover?: number;
   cloud_cover_pct: number;
+  solar_irradiance?: number;
   irradiance_w_m2: number;
+  wind_speed?: number;
   wind_speed_ms: number;
+  humidity?: number;
   humidity_pct: number;
-  condition: string;
+  rainfall?: number;
+  condition?: string;
+  source?: string;
 }
 
 export interface WeatherForecastHour {
@@ -308,23 +315,77 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
 
 export const api = {
   // Auth
-  login: (credentials: URLSearchParams) =>
-    fetch(`${BASE_URL}/auth/login`, {
+  register: (data: { email: string; password: string; role?: string }) =>
+    request<any>('/auth/register', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: credentials.toString(),
-    }).then(r => {
-      if (!r.ok) throw new Error('Invalid credentials');
-      return r.json();
+      body: JSON.stringify(data),
+    }),
+  login: async (credentials: URLSearchParams | { username?: string; email?: string; password: string }) => {
+    let headers: Record<string, string> = {};
+    let body: string;
+
+    if (credentials instanceof URLSearchParams) {
+      headers['Content-Type'] = 'application/x-www-form-urlencoded';
+      body = credentials.toString();
+    } else {
+      headers['Content-Type'] = 'application/json';
+      body = JSON.stringify({
+        email: credentials.email || credentials.username,
+        password: credentials.password,
+      });
+    }
+
+    const res = await fetch(`${BASE_URL}/auth/login`, {
+      method: 'POST',
+      headers,
+      body,
+    });
+    if (!res.ok) {
+      let errDetail = 'Invalid credentials';
+      try {
+        const j = await res.json();
+        errDetail = j.detail || errDetail;
+      } catch {}
+      throw new Error(errDetail);
+    }
+    return res.json();
+  },
+  refreshToken: (refreshToken: string) =>
+    request<any>('/auth/refresh', {
+      method: 'POST',
+      body: JSON.stringify({ refresh_token: refreshToken }),
     }),
   getMe: () => request<any>('/auth/me'),
 
   // Energy & Telemetry
   getEnergyCurrent: () => request<EnergyCurrent>('/energy/current'),
-  getEnergyHistory: (hours = 24) => request<any[]>(`/energy/history?hours=${hours}`),
+  getEnergyHistory: (days = 7) => request<any>(`/energy/history?days=${days}`),
 
   // Weather
-  getWeatherCurrent: () => request<WeatherCurrent>('/weather/current'),
+  getWeatherCurrent: async (): Promise<WeatherCurrent> => {
+    const raw: any = await request<any>('/weather/current');
+    const temp = raw.temperature_c ?? raw.temperature ?? 0;
+    const cloud = raw.cloud_cover_pct ?? raw.cloud_cover ?? 0;
+    const irr = raw.irradiance_w_m2 ?? raw.solar_irradiance ?? 0;
+    const wind = raw.wind_speed_ms ?? raw.wind_speed ?? 0;
+    const hum = raw.humidity_pct ?? raw.humidity ?? 0;
+    return {
+      timestamp: raw.timestamp || new Date().toISOString(),
+      temperature: temp,
+      temperature_c: temp,
+      cloud_cover: cloud,
+      cloud_cover_pct: cloud,
+      solar_irradiance: irr,
+      irradiance_w_m2: irr,
+      wind_speed: wind,
+      wind_speed_ms: wind,
+      humidity: hum,
+      humidity_pct: hum,
+      rainfall: raw.rainfall ?? 0,
+      condition: raw.condition || (cloud > 60 ? 'Overcast' : cloud > 30 ? 'Partly Cloudy' : 'Sunny'),
+      source: raw.source || 'demo',
+    };
+  },
   getWeatherForecast: () => request<WeatherForecastResponse>('/weather/forecast'),
   getWeatherImpact: () => request<any>('/weather/impact'),
 
@@ -376,21 +437,78 @@ export const api = {
 
   // Battery & Optimization
   getBatteryStatus: () => request<BatteryStatus>('/battery/status'),
-  optimizeBattery: (params?: {
+  optimizeBattery: async (params?: {
     custom_demand_kwh?: number;
     custom_generation_kwh?: number;
     reserve_margin_pct?: number;
     current_soc_override?: number;
     battery_capacity_override?: number;
-  }) =>
-    request<OptimizationResult>('/battery/optimize', {
+    expected_demand_kwh?: number;
+    predicted_generation_kwh?: number;
+    reserve_pct?: number;
+    current_soc_pct?: number;
+    capacity_kwh?: number;
+  }): Promise<OptimizationResult> => {
+    const rawDemand = params?.expected_demand_kwh ?? params?.custom_demand_kwh;
+    const rawGen = params?.predicted_generation_kwh ?? params?.custom_generation_kwh;
+    const rawReserve = params?.reserve_pct ?? params?.reserve_margin_pct;
+    const rawSoc = params?.current_soc_pct ?? params?.current_soc_override;
+    const rawCap = params?.capacity_kwh ?? params?.battery_capacity_override;
+
+    const body: Record<string, any> = {};
+    if (rawDemand !== undefined) body.expected_demand_kwh = rawDemand;
+    if (rawGen !== undefined) body.predicted_generation_kwh = rawGen;
+    if (rawReserve !== undefined) body.reserve_pct = rawReserve > 1 ? rawReserve / 100 : rawReserve;
+    if (rawSoc !== undefined) body.current_soc_pct = rawSoc > 1 ? rawSoc / 100 : rawSoc;
+    if (rawCap !== undefined) body.capacity_kwh = rawCap;
+
+    const raw: any = await request<any>('/battery/optimize', {
       method: 'POST',
-      body: JSON.stringify(params || {}),
-    }),
-  getBatteryHistory: (hours = 24) => request<any[]>(`/battery/history?hours=${hours}`),
+      body: JSON.stringify(body),
+    });
+
+    const derivations = (raw.derivations || []).map((d: any) => ({
+      step: d.step_number ?? d.step ?? 1,
+      formula_name: d.formula_name || 'Calculation',
+      equation: d.formula_latex || d.equation || '',
+      substitution: d.calculation || d.substitution || '',
+      result: `${d.result_value ?? ''} ${d.result_unit ?? ''}`.trim(),
+      notes: d.explanation || d.notes || '',
+    }));
+
+    const recCharge = raw.effective_recommended_charge_kwh ?? (raw.recommended_charge_kwh ?? 0);
+    const targetSoc = raw.projected_end_soc_pct ? Math.round(raw.projected_end_soc_pct * 1000) / 10 : (raw.target_soc_pct ?? 82.5);
+    const action = raw.mode === 'charge' ? 'CHARGE' : raw.mode === 'surplus' ? 'DISCHARGE' : 'HOLD';
+
+    return {
+      timestamp: raw.timestamp || new Date().toISOString(),
+      target_date: raw.target_date || new Date().toISOString().slice(0, 10),
+      generation_forecast_kwh: raw.inputs_used?.predicted_generation_kwh ?? 7350,
+      demand_forecast_kwh: raw.inputs_used?.expected_demand_kwh ?? 8600,
+      deficit_kwh: raw.deficit_kwh ?? 0,
+      surplus_kwh: raw.surplus_kwh ?? 0,
+      current_soc_pct: raw.inputs_used?.current_soc_pct ? Math.round(raw.inputs_used.current_soc_pct * 1000) / 10 : 68.5,
+      current_stored_kwh: raw.inputs_used?.current_stored_energy_kwh ?? 1712.5,
+      target_soc_pct: targetSoc,
+      target_stored_kwh: (targetSoc / 100) * (raw.inputs_used?.capacity_kwh ?? 2500),
+      recommended_charge_kwh: recCharge,
+      recommended_discharge_kwh: raw.exportable_kwh ?? 0,
+      energy_shortfall_kwh: raw.shortfall_kwh ?? 0,
+      exportable_surplus_kwh: raw.exportable_kwh ?? 0,
+      reserve_margin_kwh: raw.reserve_requirement_kwh ?? 0,
+      max_charge_power_kw: raw.power_limit_kwh ?? 625,
+      max_discharge_power_kw: 750,
+      estimated_charge_hours: 4.0,
+      recommendation_action: action as any,
+      advisory_narrative: raw.advisor_explanation?.executive_summary || raw.advisory_narrative || 'Deterministic LP dispatch target reached.',
+      derivation_trace: derivations,
+    };
+  },
+  getBatteryHistory: (days = 7) => request<any>(`/battery/history?days=${days}`),
 
   // Grid & SCADA Telemetry
   getGridStatus: () => request<GridStatus>('/grid/status'),
+  getGridFlow: () => request<any>('/grid/flow'),
   getModbusRegisters: () => request<ModbusFrameResponse>('/telemetry/modbus-registers'),
 
   // Simulation
@@ -455,7 +573,19 @@ export const api = {
   },
 
   // Alerts
-  getAlerts: () => request<SystemAlert[]>('/alerts'),
+  getAlerts: async (): Promise<SystemAlert[]> => {
+    const raw = await request<any>('/alerts');
+    const list = Array.isArray(raw) ? raw : (raw?.alerts || []);
+    return list.map((a: any) => ({
+      id: String(a.id),
+      timestamp: a.created_at || a.timestamp || new Date().toISOString(),
+      severity: (a.severity === 'good' ? 'INFO' : a.severity === 'warn' ? 'WARNING' : 'CRITICAL') as any,
+      subsystem: a.title || 'Grid Subsystem',
+      message: a.description || a.message || '',
+      value: a.resolved_at ? 'RESOLVED' : 'ACTIVE',
+      status: a.resolved_at ? 'ACKNOWLEDGED' : 'ACTIVE',
+    }));
+  },
   acknowledgeAlert: (id: string) =>
     request<any>(`/alerts/${id}/ack`, { method: 'POST' }),
 
@@ -487,6 +617,51 @@ export const api = {
 
   // Settings
   getSettings: () => request<any>('/settings'),
+
+  // Site Analysis
+  analyzeSitePhoto: async (
+    file: File,
+    params?: { latitude?: number; longitude?: number; area_acres?: number }
+  ) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    if (params?.latitude !== undefined) formData.append('latitude', params.latitude.toString());
+    if (params?.longitude !== undefined) formData.append('longitude', params.longitude.toString());
+    if (params?.area_acres !== undefined) formData.append('area_acres', params.area_acres.toString());
+
+    const token = localStorage.getItem('aurora_token');
+    const headers: Record<string, string> = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const res = await fetch(`${BASE_URL}/site/analyze-photo`, {
+      method: 'POST',
+      headers,
+      body: formData,
+    });
+    if (!res.ok) {
+      let errDetail = 'Photo analysis failed';
+      try {
+        const j = await res.json();
+        errDetail = j.detail || errDetail;
+      } catch {}
+      throw new Error(errDetail);
+    }
+    return res.json();
+  },
+
+  analyzeSiteBoundary: (data: {
+    coordinates: Array<{ lat: number; lng: number }>;
+    soil_type?: string;
+    slope_deg?: number;
+    substation_distance_km?: number;
+    land_utilization_pct?: number;
+    module_wattage_w?: number;
+    battery_storage_hours?: number;
+  }) =>
+    request<any>('/site/analyze-boundary', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
 
   // HiGHS Mathematical LP & Backtest Benchmark
   getBacktest: () => request<any>('/battery/backtest'),

@@ -10,7 +10,7 @@ interface TopBarProps {
 }
 
 export const TopBar: React.FC<TopBarProps> = ({ onOpenAlerts, unreadAlertCount = 2 }) => {
-  const { currentTime, isDemoMode, setDemoMode, isConnected, triggerRefresh } = useSystem();
+  const { currentTime, isDemoMode, setDemoMode, isConnected, wsConnected, triggerRefresh } = useSystem();
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   const utcString = currentTime.toUTCString().slice(17, 25) + ' UTC';
@@ -37,8 +37,8 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenAlerts, unreadAlertCount =
             AURORA GRID CONTROL
           </span>
           <StatusBadge
-            status={isConnected ? 'ONLINE' : 'OFFLINE'}
-            label={isConnected ? 'SCADA LINK ACTIVE' : 'RECONNECTING'}
+            status={isConnected ? (wsConnected ? 'ONLINE' : 'STABLE') : 'OFFLINE'}
+            label={isConnected ? (wsConnected ? 'LIVE WS TELEMETRY' : 'REST POLLING ACTIVE') : 'SCADA RECONNECTING'}
           />
         </div>
 
@@ -53,7 +53,7 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenAlerts, unreadAlertCount =
 
       {/* Right: Demo Badge, Actions */}
       <div className="flex items-center gap-3">
-        {/* Synthetic Data Required Badge & Toggle */}
+        {/* Synthetic vs Live API Badge & Toggle */}
         <motion.div
           whileHover={{ scale: 1.03 }}
           whileTap={{ scale: 0.97 }}
@@ -61,12 +61,12 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenAlerts, unreadAlertCount =
           className={`cursor-pointer flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-mono border transition-all ${
             isDemoMode
               ? 'bg-amber/15 border-amber/50 text-amber shadow-glow-amber'
-              : 'bg-panel-2 border-line text-text-dim'
+              : 'bg-teal/15 border-teal/50 text-teal shadow-glow-teal'
           }`}
           title="Toggle between Synthetic Demonstration Engine and Live Telemetry"
         >
-          <span className="w-1.5 h-1.5 rounded-full bg-amber animate-pulse" />
-          <span className="font-bold tracking-tight">DEMO / SYNTHETIC DATA</span>
+          <span className={`w-1.5 h-1.5 rounded-full ${isDemoMode ? 'bg-amber animate-pulse' : 'bg-teal animate-ping'}`} />
+          <span className="font-bold tracking-tight">{isDemoMode ? 'DEMO / SYNTHETIC DATA' : 'LIVE API (RENDER)'}</span>
         </motion.div>
 
         {/* Refresh button */}

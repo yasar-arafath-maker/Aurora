@@ -1,12 +1,34 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ScadaPanel } from '../components/common/ScadaPanel';
 import { useAuth } from '../context/AuthContext';
-import { Settings as SettingsIcon, Save, CheckCircle2 } from 'lucide-react';
+import { api } from '../services/api';
+import { Settings as SettingsIcon, Save, CheckCircle2, AlertTriangle, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 export const SettingsPage: React.FC = () => {
   const { user } = useAuth();
+  const [settings, setSettings] = useState<any>(null);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
   const [savedSuccess, setSavedSuccess] = useState<boolean>(false);
+
+  const fetchSettings = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await api.getSettings();
+      setSettings(data);
+    } catch (e: any) {
+      console.error('Failed to load settings:', e);
+      setError(e.message || 'Failed to load system settings from backend API');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchSettings();
+  }, []);
 
   const handleSave = () => {
     setSavedSuccess(true);
@@ -59,6 +81,33 @@ export const SettingsPage: React.FC = () => {
         </div>
       </div>
 
+      {/* Loading state */}
+      {loading && (
+        <div className="flex items-center justify-center p-12 scada-panel">
+          <RefreshCw className="w-6 h-6 text-teal animate-spin mr-3" />
+          <span className="font-mono text-sm text-text-dim">Retrieving hardware nameplate ratings and grid protection limits from backend...</span>
+        </div>
+      )}
+
+      {/* Error state */}
+      {error && !loading && (
+        <div className="scada-panel p-4 border-red/40 bg-red/10 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <AlertTriangle className="w-5 h-5 text-red" />
+            <div>
+              <p className="text-xs font-bold text-red font-mono">Settings API Offline</p>
+              <p className="text-[11px] text-text-dim">{error}</p>
+            </div>
+          </div>
+          <button
+            onClick={fetchSettings}
+            className="px-3 py-1 rounded bg-panel-2 border border-line text-xs font-mono text-teal hover:border-teal/50"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Battery Nameplate Ratings */}
         <ScadaPanel
@@ -69,27 +118,39 @@ export const SettingsPage: React.FC = () => {
           <div className="space-y-3 font-mono text-xs">
             <motion.div whileHover={{ x: 2 }} className="flex items-center justify-between p-2.5 rounded bg-panel-2 border border-line">
               <span className="text-text-dim">Rated Usable Energy Capacity</span>
-              <span className="font-bold text-teal">2,500.0 kWh (2.5 MWh)</span>
+              <span className="font-bold text-teal">
+                {settings?.battery_capacity_kwh ? `${Number(settings.battery_capacity_kwh).toLocaleString()} kWh (${(Number(settings.battery_capacity_kwh)/1000).toFixed(1)} MWh)` : '2,500.0 kWh (2.5 MWh)'}
+              </span>
             </motion.div>
             <motion.div whileHover={{ x: 2 }} className="flex items-center justify-between p-2.5 rounded bg-panel-2 border border-line">
               <span className="text-text-dim">Max Continuous Charge Power</span>
-              <span className="font-bold text-teal">625.0 kW (4-Hour C-Rate)</span>
+              <span className="font-bold text-teal">
+                {settings?.max_charge_power_kw ? `${Number(settings.max_charge_power_kw).toFixed(1)} kW (4-Hour C-Rate)` : '625.0 kW (4-Hour C-Rate)'}
+              </span>
             </motion.div>
             <motion.div whileHover={{ x: 2 }} className="flex items-center justify-between p-2.5 rounded bg-panel-2 border border-line">
               <span className="text-text-dim">Max Continuous Discharge Power</span>
-              <span className="font-bold text-teal">750.0 kW</span>
+              <span className="font-bold text-teal">
+                {settings?.max_discharge_power_kw ? `${Number(settings.max_discharge_power_kw).toFixed(1)} kW` : '750.0 kW'}
+              </span>
             </motion.div>
             <motion.div whileHover={{ x: 2 }} className="flex items-center justify-between p-2.5 rounded bg-panel-2 border border-line">
               <span className="text-text-dim">Depth of Discharge Floor (Min SOC)</span>
-              <span className="font-bold text-amber">10.0% (Cell Longevity Limit)</span>
+              <span className="font-bold text-amber">
+                {settings?.min_soc_pct ? `${(Number(settings.min_soc_pct) * (Number(settings.min_soc_pct) <= 1 ? 100 : 1)).toFixed(1)}% (Cell Longevity Limit)` : '10.0% (Cell Longevity Limit)'}
+              </span>
             </motion.div>
             <motion.div whileHover={{ x: 2 }} className="flex items-center justify-between p-2.5 rounded bg-panel-2 border border-line">
               <span className="text-text-dim">Max Charge Ceiling (Max SOC)</span>
-              <span className="font-bold text-amber">95.0% (Overvoltage Prevention)</span>
+              <span className="font-bold text-amber">
+                {settings?.max_soc_pct ? `${(Number(settings.max_soc_pct) * (Number(settings.max_soc_pct) <= 1 ? 100 : 1)).toFixed(1)}% (Overvoltage Prevention)` : '95.0% (Overvoltage Prevention)'}
+              </span>
             </motion.div>
             <motion.div whileHover={{ x: 2 }} className="flex items-center justify-between p-2.5 rounded bg-panel-2 border border-line">
               <span className="text-text-dim">One-Way Inverter/Cell Efficiency</span>
-              <span className="font-bold text-green">92.0% (Roundtrip ~84.6%)</span>
+              <span className="font-bold text-green">
+                {settings?.charging_efficiency ? `${(Number(settings.charging_efficiency) * (Number(settings.charging_efficiency) <= 1 ? 100 : 1)).toFixed(1)}% (Roundtrip ~84.6%)` : '92.0% (Roundtrip ~84.6%)'}
+              </span>
             </motion.div>
           </div>
         </ScadaPanel>

@@ -25,18 +25,37 @@ export const GridPage: React.FC = () => {
   const { wsConnected, wsLatencyMs, packetRate, modbusRegisters } = useSystemContext();
   const [activeTab, setActiveTab] = useState<'registers' | 'raw_frames'>('registers');
   const [frameCounter, setFrameCounter] = useState(1042);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+  const [fetchedRegisters, setFetchedRegisters] = useState<ModbusRegisterItem[]>([]);
 
-  const displayRegisters = modbusRegisters.length > 0 ? modbusRegisters : DEFAULT_MODBUS_REGISTERS;
+  const displayRegisters =
+    modbusRegisters.length > 0
+      ? modbusRegisters
+      : fetchedRegisters.length > 0
+      ? fetchedRegisters
+      : DEFAULT_MODBUS_REGISTERS;
+
+  const fetchGrid = async () => {
+    try {
+      const [data, regData] = await Promise.all([
+        api.getGridStatus(),
+        api.getModbusRegisters().catch(() => null),
+      ]);
+      setGridStatus(data);
+      if (regData?.registers) {
+        setFetchedRegisters(regData.registers);
+      }
+      setError(null);
+    } catch (e: any) {
+      console.error(e);
+      setError(e.message || 'Failed to fetch grid telemetry from backend API');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchGrid = async () => {
-      try {
-        const data = await api.getGridStatus();
-        setGridStatus(data);
-      } catch (e) {
-        console.error(e);
-      }
-    };
     fetchGrid();
     const interval = setInterval(fetchGrid, 5000);
     return () => clearInterval(interval);

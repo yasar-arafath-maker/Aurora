@@ -2,51 +2,45 @@ import React, { useEffect, useState } from 'react';
 import { api, WeatherCurrent, WeatherForecastResponse } from '../services/api';
 import { ScadaPanel } from '../components/common/ScadaPanel';
 import { WeatherImpactChain } from '../components/weather/WeatherImpactChain';
-import { CloudSun, Wind, Droplets, Sun } from 'lucide-react';
+import { CloudSun, Wind, Droplets, Sun, AlertTriangle, RefreshCw } from 'lucide-react';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, Legend } from 'recharts';
 import { motion } from 'framer-motion';
 
 export const WeatherPage: React.FC = () => {
   const [current, setCurrent] = useState<WeatherCurrent | null>(null);
   const [forecast, setForecast] = useState<WeatherForecastResponse | null>(null);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchWeather = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [curr, fcast] = await Promise.all([
+        api.getWeatherCurrent(),
+        api.getWeatherForecast(),
+      ]);
+      setCurrent(curr);
+      setForecast(fcast);
+    } catch (e: any) {
+      console.error('Failed to load weather data:', e);
+      setError(e.message || 'Failed to fetch weather telemetry from backend API');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchWeather = async () => {
-      try {
-        const [curr, fcast] = await Promise.all([
-          api.getWeatherCurrent(),
-          api.getWeatherForecast(),
-        ]);
-        setCurrent(curr);
-        setForecast(fcast);
-      } catch (e) {
-        console.error(e);
-      }
-    };
     fetchWeather();
   }, []);
 
-  const fallbackHourly = Array.from({ length: 24 }).map((_, h) => {
-    const isDay = h >= 6 && h <= 18;
-    const factor = isDay ? Math.sin(((h - 6) / 12) * Math.PI) : 0;
-    return {
-      hour: `${h < 10 ? '0' : ''}${h}:00`,
-      Irradiance: Math.round(factor * 850),
-      WindSpeed: Number((6.5 + 2.0 * Math.sin((h / 24) * 2 * Math.PI)).toFixed(1)),
-      SolarKw: Math.round(factor * 680),
-      WindKw: Math.round(220 + 140 * Math.sin((h / 24) * 2 * Math.PI)),
-    };
-  });
-
-  const parsedHourly = forecast?.hourly?.map((h) => ({
+  const hourlyData = forecast?.hourly?.map((h) => ({
     hour: h.time,
     Irradiance: Math.round(h.irradiance_w_m2),
     WindSpeed: Number(h.wind_speed_ms.toFixed(1)),
     SolarKw: Math.round(h.expected_solar_kw),
     WindKw: Math.round(h.expected_wind_kw),
   })) || [];
-
-  const hourlyData = parsedHourly.length > 0 ? parsedHourly : fallbackHourly;
 
   return (
     <motion.div
@@ -73,6 +67,33 @@ export const WeatherPage: React.FC = () => {
           </span>
         </div>
       </div>
+
+      {/* Loading state */}
+      {loading && (
+        <div className="flex items-center justify-center p-12 scada-panel">
+          <RefreshCw className="w-6 h-6 text-teal animate-spin mr-3" />
+          <span className="font-mono text-sm text-text-dim">Retrieving live meteorological telemetry and 24h diurnal forecast...</span>
+        </div>
+      )}
+
+      {/* Error state */}
+      {error && !loading && (
+        <div className="scada-panel p-4 border-red/40 bg-red/10 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <AlertTriangle className="w-5 h-5 text-red" />
+            <div>
+              <p className="text-xs font-bold text-red font-mono">Weather Station Offline</p>
+              <p className="text-[11px] text-text-dim">{error}</p>
+            </div>
+          </div>
+          <button
+            onClick={fetchWeather}
+            className="px-3 py-1 rounded bg-panel-2 border border-line text-xs font-mono text-teal hover:border-teal/50"
+          >
+            Retry
+          </button>
+        </div>
+      )}
 
       {/* Current Environmental Sensors Strip */}
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">

@@ -20,7 +20,7 @@ const SystemContext = createContext<SystemContextType | undefined>(undefined);
 
 export const SystemProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentTime, setCurrentTime] = useState<Date>(new Date());
-  const [isDemoMode, setDemoMode] = useState<boolean>(true);
+  const [isDemoMode, setDemoMode] = useState<boolean>(false);
   const [isConnected, setIsConnected] = useState<boolean>(true);
   const [wsConnected, setWsConnected] = useState<boolean>(false);
   const [wsLatencyMs, setWsLatencyMs] = useState<number>(3.8);
@@ -55,9 +55,18 @@ export const SystemProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
     const connectWs = () => {
       try {
-        const host = window.location.port === '5173' ? '127.0.0.1:8000' : window.location.host;
-        const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        ws = new WebSocket(`${proto}//${host}/api/v1/telemetry/ws`);
+        const apiUrl = import.meta.env.VITE_API_BASE_URL;
+        let wsUrl: string;
+        if (apiUrl && apiUrl.startsWith('http')) {
+          const parsed = new URL(apiUrl);
+          const proto = parsed.protocol === 'https:' ? 'wss:' : 'ws:';
+          wsUrl = `${proto}//${parsed.host}${parsed.pathname.replace(/\/$/, '')}/telemetry/ws`;
+        } else {
+          const host = window.location.port === '5173' ? '127.0.0.1:8000' : window.location.host;
+          const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+          wsUrl = `${proto}//${host}/api/v1/telemetry/ws`;
+        }
+        ws = new WebSocket(wsUrl);
         wsRef.current = ws;
 
         ws.onopen = () => {
@@ -144,8 +153,8 @@ export const SystemProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         }
       } catch (e) {
         if (mounted) {
-          setIsConnected(true);
-          if (!telemetry) {
+          setIsConnected(false);
+          if (isDemoMode && !telemetry) {
             setTelemetry({
               timestamp: new Date().toISOString(),
               solar_kw: 685.4,

@@ -3,7 +3,7 @@ import { api, BatteryStatus, OptimizationResult } from '../services/api';
 import { ScadaPanel } from '../components/common/ScadaPanel';
 import { BatteryCabinetVisual } from '../components/diagrams/BatteryCabinetVisual';
 import { FormulaCard } from '../components/common/FormulaCard';
-import { BatteryCharging, RotateCcw, Cpu, TrendingUp, ShieldCheck, DollarSign } from 'lucide-react';
+import { BatteryCharging, RotateCcw, Cpu, TrendingUp, ShieldCheck, DollarSign, AlertTriangle, RefreshCw } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 
@@ -12,6 +12,8 @@ export const BatteryPage: React.FC = () => {
   const [optimization, setOptimization] = useState<OptimizationResult | null>(null);
   const [backtest, setBacktest] = useState<any>(null);
   const [mpcData, setMpcData] = useState<any>(null);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
 
   // Disturbance Sliders for MPC Stress Testing
   const [cloudDropPct, setCloudDropPct] = useState<number>(45);
@@ -24,8 +26,6 @@ export const BatteryPage: React.FC = () => {
   const [reservePct, setReservePct] = useState<number>(15);
   const [socOverride, setSocOverride] = useState<number>(68.5);
   const [capacityKwh, setCapacityKwh] = useState<number>(2500);
-
-  const [, setLoading] = useState<boolean>(false);
 
   const recomputeOptimization = async (
     customDemand = demandKwh,
@@ -68,27 +68,33 @@ export const BatteryPage: React.FC = () => {
     }
   };
 
-  useEffect(() => {
-    const initData = async () => {
-      try {
-        const [bat, opt, btest, mpcRes] = await Promise.all([
-          api.getBatteryStatus(),
-          api.optimizeBattery(),
-          api.getBacktest().catch(() => null),
-          api.simulateMpc({ cloud_drop_pct: 0.45, demand_surge_pct: 0.35 }).catch(() => null),
-        ]);
-        setBatteryStatus(bat);
-        setOptimization(opt);
-        setBacktest(btest);
-        setMpcData(mpcRes);
-        if (bat) {
-          const rawSoc = (bat as any).current_soc_pct ?? ((bat as any).soc_pct ? (bat as any).soc_pct * 100 : 68.5);
-          setSocOverride(rawSoc ?? 68.5);
-        }
-      } catch (e) {
-        console.error(e);
+  const initData = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [bat, opt, btest, mpcRes] = await Promise.all([
+        api.getBatteryStatus(),
+        api.optimizeBattery(),
+        api.getBacktest().catch(() => null),
+        api.simulateMpc({ cloud_drop_pct: 0.45, demand_surge_pct: 0.35 }).catch(() => null),
+      ]);
+      setBatteryStatus(bat);
+      setOptimization(opt);
+      setBacktest(btest);
+      setMpcData(mpcRes);
+      if (bat) {
+        const rawSoc = (bat as any).current_soc_pct ?? ((bat as any).soc_pct ? (bat as any).soc_pct * 100 : 68.5);
+        setSocOverride(rawSoc ?? 68.5);
       }
-    };
+    } catch (e: any) {
+      console.error(e);
+      setError(e.message || 'Failed to fetch BESS telemetry and optimization from backend API');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     initData();
   }, []);
 
@@ -136,6 +142,33 @@ export const BatteryPage: React.FC = () => {
           </span>
         </div>
       </div>
+
+      {/* Loading state */}
+      {loading && (
+        <div className="flex items-center justify-center p-12 scada-panel">
+          <RefreshCw className="w-6 h-6 text-teal animate-spin mr-3" />
+          <span className="font-mono text-sm text-text-dim">Retrieving live battery telemetry and solving LP dispatch optimization...</span>
+        </div>
+      )}
+
+      {/* Error state */}
+      {error && !loading && (
+        <div className="scada-panel p-4 border-red/40 bg-red/10 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <AlertTriangle className="w-5 h-5 text-red" />
+            <div>
+              <p className="text-xs font-bold text-red font-mono">BESS Service Offline</p>
+              <p className="text-[11px] text-text-dim">{error}</p>
+            </div>
+          </div>
+          <button
+            onClick={initData}
+            className="px-3 py-1 rounded bg-panel-2 border border-line text-xs font-mono text-teal hover:border-teal/50"
+          >
+            Retry
+          </button>
+        </div>
+      )}
 
       {/* Physical SCADA Cabinet Visualization */}
       <ScadaPanel

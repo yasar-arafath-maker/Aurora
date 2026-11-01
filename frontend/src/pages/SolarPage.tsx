@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { api } from '../services/api';
 import { ScadaPanel } from '../components/common/ScadaPanel';
 import { AnimatedCounter } from '../components/common/AnimatedCounter';
 import {
@@ -499,6 +500,17 @@ export const SolarPage: React.FC = () => {
         setToastMessage('✓ Custom rooftop photo loaded! Drop pins to outline.');
       };
       reader.readAsDataURL(file);
+
+      // Trigger backend AI site photo analysis
+      api.analyzeSitePhoto(file)
+        .then((analysis) => {
+          if (analysis?.suitability_verdict) {
+            setToastMessage(`✓ AI Land Survey: ${analysis.suitability_verdict} (Soil: ${analysis.detected_soil_type})`);
+          }
+        })
+        .catch((err) => {
+          console.warn('Backend photo analysis note:', err);
+        });
     }
   };
 
@@ -533,6 +545,25 @@ export const SolarPage: React.FC = () => {
     speakAdvice(
       `AI Auto-fit complete. We have configured ${columns * rows} panels positioned away from obstacles, angled at ${tiltAngle} degrees facing South.`
     );
+
+    // Call backend boundary analysis if boundary polygon is defined
+    if (boundaryPoints.length >= 3) {
+      const coords = boundaryPoints.map((pt) => ({
+        lat: 13.0827 + (pt.y - 50) * 0.0001,
+        lng: 80.2707 + (pt.x - 50) * 0.0001
+      }));
+      api.analyzeSiteBoundary({
+        coordinates: coords,
+        soil_type: 'red_loam',
+        slope_deg: 2.5
+      }).then((res) => {
+        if (res?.estimated_solar_mw) {
+          setToastMessage(`⚡ AI Auto-Fit & Backend Blueprint: ${(res.estimated_solar_mw * 1000).toFixed(0)} kW estimated capacity!`);
+        }
+      }).catch((e) => {
+        console.warn('Backend site boundary endpoint notice:', e);
+      });
+    }
   };
 
   // Snap to True South

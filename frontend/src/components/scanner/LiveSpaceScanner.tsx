@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { SPACE_PRESETS, SpacePreset, FixMethod } from './spaceData';
 import { sounds } from '../../lib/soundEffects';
+import { api } from '../../services/api';
 
 interface LiveSpaceScannerProps {
   onApplyConfig?: (config: {
@@ -56,6 +57,8 @@ export const LiveSpaceScanner: React.FC<LiveSpaceScannerProps> = ({
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [cameraFacing, setCameraFacing] = useState<'environment' | 'user'>('environment');
   const [uploadedImage, setUploadedImage] = useState<string | null>(null);
+  const [photoAnalysis, setPhotoAnalysis] = useState<any | null>(null);
+  const [isAnalyzingPhoto, setIsAnalyzingPhoto] = useState<boolean>(false);
   const [snapshotFlash, setSnapshotFlash] = useState<boolean>(false);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
   const [checkedSteps, setCheckedSteps] = useState<{ [key: number]: boolean }>({});
@@ -149,6 +152,20 @@ export const LiveSpaceScanner: React.FC<LiveSpaceScannerProps> = ({
         sounds.playSuccessChime();
       };
       reader.readAsDataURL(file);
+
+      // Trigger real backend CV terrain photo analysis
+      setIsAnalyzingPhoto(true);
+      api.analyzeSitePhoto(file)
+        .then((analysis) => {
+          setPhotoAnalysis(analysis);
+          sounds.playSuccessChime();
+        })
+        .catch((err) => {
+          console.warn('Backend photo analysis notice:', err);
+        })
+        .finally(() => {
+          setIsAnalyzingPhoto(false);
+        });
     }
   };
 
@@ -638,6 +655,37 @@ export const LiveSpaceScanner: React.FC<LiveSpaceScannerProps> = ({
               );
             })}
           </div>
+
+          {/* Real AI CV Terrain Diagnostics when photo uploaded */}
+          {isAnalyzingPhoto && (
+            <div className="p-3 rounded-lg bg-teal/10 border border-teal/40 flex items-center gap-2 text-xs font-mono text-teal">
+              <div className="w-3.5 h-3.5 border-2 border-teal border-t-transparent rounded-full animate-spin shrink-0" />
+              <span>Analyzing uploaded terrain image via backend AI Computer Vision...</span>
+            </div>
+          )}
+          {photoAnalysis && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="p-3 rounded-lg bg-teal/10 border border-teal/50 space-y-2 text-xs font-mono shadow-md"
+            >
+              <div className="flex items-center justify-between text-teal font-bold">
+                <span className="flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5" />
+                  AI CV Terrain Diagnostics
+                </span>
+                <span className="text-[10px] px-2 py-0.5 rounded bg-teal/20 border border-teal/40 text-teal font-bold">
+                  {photoAnalysis.suitability_verdict}
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-[11px] pt-1 border-t border-teal/20">
+                <div>Soil: <span className="text-text-main font-semibold capitalize">{String(photoAnalysis.detected_soil_type || '').replace('_', ' ')}</span></div>
+                <div>Slope: <span className="text-text-main font-semibold">{photoAnalysis.estimated_slope_deg}°</span></div>
+                <div>Vegetation: <span className="text-text-main font-semibold">{photoAnalysis.vegetation_coverage_pct}%</span></div>
+                <div>Shading Loss: <span className="text-text-main font-semibold">{photoAnalysis.shading_obstruction_pct}%</span></div>
+              </div>
+            </motion.div>
+          )}
 
           {/* Interactive Panel Quantity Slider */}
           <div className="p-3 rounded-lg bg-panel border border-line space-y-2">

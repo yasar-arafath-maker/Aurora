@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { api, ScenarioResult } from '../services/api';
 import { ScadaPanel } from '../components/common/ScadaPanel';
-import { FlaskConical, Play, Layers } from 'lucide-react';
+import { FlaskConical, Play, Layers, AlertTriangle, RefreshCw } from 'lucide-react';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, Legend } from 'recharts';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -14,6 +14,8 @@ export const ScenarioLabPage: React.FC = () => {
   const [description, setDescription] = useState<string>('Overcast Sky & 20% Peak Demand Surge');
 
   const [loading, setLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
+  const [isFallback, setIsFallback] = useState<boolean>(false);
   const [result, setResult] = useState<ScenarioResult | null>(null);
 
   const handleRunSimulation = async (
@@ -24,6 +26,7 @@ export const ScenarioLabPage: React.FC = () => {
     customDesc = description
   ) => {
     setLoading(true);
+    setError(null);
     try {
       const res = await api.runSimulation({
         cloud_cover_pct: customCloud,
@@ -33,8 +36,11 @@ export const ScenarioLabPage: React.FC = () => {
         description: customDesc,
       });
       setResult(res);
-    } catch (e) {
-      console.error('Failed to run simulation, applying fallback scenario:', e);
+      setIsFallback(false);
+    } catch (e: any) {
+      console.warn('Backend simulation endpoint returned error, displaying synthetic contingency model:', e);
+      setError(e.message || 'Simulation API currently unavailable');
+      setIsFallback(true);
       // Fallback calculation so the UI never crashes or stays blank
       const b_solar = 4250;
       const s_solar = Math.round(b_solar * customIrr * (1 - (customCloud - 30) * 0.008));
@@ -148,13 +154,42 @@ export const ScenarioLabPage: React.FC = () => {
         <div className="flex items-center gap-2 font-mono text-xs">
           <motion.span
             whileHover={{ scale: 1.05 }}
-            className="px-2 py-1 rounded bg-amber/15 text-amber border border-amber/40 shadow-sm flex items-center gap-1.5"
+            className={`px-2 py-1 rounded border shadow-sm flex items-center gap-1.5 ${
+              isFallback
+                ? 'bg-amber/15 text-amber border-amber/40'
+                : 'bg-teal/15 text-teal border-teal/40'
+            }`}
           >
-            <span className="w-1.5 h-1.5 rounded-full bg-amber animate-pulse" />
-            SANDBOX ENVIRONMENT
+            <span className={`w-1.5 h-1.5 rounded-full ${isFallback ? 'bg-amber animate-pulse' : 'bg-teal animate-ping'}`} />
+            {isFallback ? 'SYNTHETIC CONTINGENCY MODEL' : 'LIVE SIMULATION API'}
           </motion.span>
         </div>
       </div>
+
+      {/* Backend Error Alert Banner */}
+      {error && (
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="scada-panel p-4 border-amber-500/50 bg-amber-950/20 flex items-center justify-between gap-4 shadow-lg"
+        >
+          <div className="flex items-center gap-3">
+            <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0" />
+            <div>
+              <p className="text-xs font-mono font-bold text-amber-300">Simulation Endpoint Notice</p>
+              <p className="text-xs text-text-dim">{error}. Displaying local physics contingency model.</p>
+            </div>
+          </div>
+          <button
+            onClick={() => handleRunSimulation()}
+            disabled={loading}
+            className="px-3 py-1.5 rounded bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-200 font-mono text-xs flex items-center gap-1.5 transition-colors cursor-pointer shrink-0"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+            <span>{loading ? 'Simulating...' : 'Retry Live API'}</span>
+          </button>
+        </motion.div>
+      )}
 
       {/* Preset Scenarios Buttons */}
       <div className="flex items-center gap-2 flex-wrap">

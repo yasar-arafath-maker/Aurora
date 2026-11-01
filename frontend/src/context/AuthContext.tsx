@@ -30,13 +30,35 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         try {
           const profile = await api.getMe();
           setUser(profile);
+          setToken(savedToken);
         } catch {
-          // Token expired or invalid, default to demo operator
-          setUser({ id: 1, email: 'operator@aurora.grid', role: 'operator' });
+          // Access token might be expired, try to refresh
+          const savedRefreshToken = localStorage.getItem('aurora_refresh_token');
+          if (savedRefreshToken) {
+            try {
+              const refreshed = await api.refreshToken(savedRefreshToken);
+              localStorage.setItem('aurora_token', refreshed.access_token);
+              if (refreshed.refresh_token) {
+                localStorage.setItem('aurora_refresh_token', refreshed.refresh_token);
+              }
+              setToken(refreshed.access_token);
+              const profile = await api.getMe();
+              setUser(profile);
+            } catch {
+              localStorage.removeItem('aurora_token');
+              localStorage.removeItem('aurora_refresh_token');
+              setToken(null);
+              setUser(null);
+            }
+          } else {
+            localStorage.removeItem('aurora_token');
+            setToken(null);
+            setUser(null);
+          }
         }
       } else {
-        // Provide default guest operator session for quick evaluation
-        setUser({ id: 2, email: 'operator@aurora.grid', role: 'operator' });
+        setUser(null);
+        setToken(null);
       }
       setIsLoading(false);
     };
@@ -46,23 +68,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const login = async (email: string, password: string) => {
     setIsLoading(true);
     try {
-      const body = new URLSearchParams();
-      body.append('username', email);
-      body.append('password', password);
-      const res = await api.login(body);
+      const res = await api.login({ email, password });
       localStorage.setItem('aurora_token', res.access_token);
+      if (res.refresh_token) {
+        localStorage.setItem('aurora_refresh_token', res.refresh_token);
+      }
       setToken(res.access_token);
       const profile = await api.getMe();
       setUser(profile);
     } catch (err: any) {
-      // Fallback for quick local demo evaluation if server auth is offline
-      if (email.includes('admin')) {
-        setUser({ id: 1, email: 'admin@aurora.grid', role: 'admin' });
-      } else if (email.includes('operator')) {
-        setUser({ id: 2, email: 'operator@aurora.grid', role: 'operator' });
-      } else {
-        setUser({ id: 3, email: 'viewer@aurora.grid', role: 'viewer' });
-      }
+      localStorage.removeItem('aurora_token');
+      localStorage.removeItem('aurora_refresh_token');
+      setToken(null);
+      setUser(null);
+      throw new Error(err.message || 'Authentication failed. Please verify credentials.');
     } finally {
       setIsLoading(false);
     }
@@ -70,6 +89,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const logout = () => {
     localStorage.removeItem('aurora_token');
+    localStorage.removeItem('aurora_refresh_token');
     setToken(null);
     setUser(null);
   };

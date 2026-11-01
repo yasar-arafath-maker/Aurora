@@ -14,53 +14,43 @@ import {
   LineChart,
   Line,
 } from 'recharts';
-import { TrendingUp, Award, ShieldCheck, Zap } from 'lucide-react';
+import { TrendingUp, Award, ShieldCheck, Zap, AlertTriangle, RefreshCw } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 export const ForecastPage: React.FC = () => {
   const [prediction, setPrediction] = useState<TomorrowPrediction | null>(null);
   const [forecastDays, setForecastDays] = useState<ForecastDayItem[]>([]);
   const [accuracy, setAccuracy] = useState<AccuracyMetrics | null>(null);
-  const [, setLoading] = useState<boolean>(true);
+  const [loading, setLoading] = useState<boolean>(true);
+
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchData = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [pred, fcast, acc] = await Promise.all([
+        api.getTomorrowPrediction(),
+        api.getForecast(7),
+        api.getAccuracyMetrics(),
+      ]);
+      const daysArray = Array.isArray(fcast?.days) ? fcast.days : (Array.isArray(fcast?.forecast) ? fcast.forecast : []);
+      setPrediction(pred);
+      setForecastDays(daysArray);
+      setAccuracy(acc);
+    } catch (e: any) {
+      console.error('Failed to load forecast data:', e);
+      setError(e.message || 'Failed to fetch forecasting data from backend API');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const [pred, fcast, acc] = await Promise.all([
-          api.getTomorrowPrediction(),
-          api.getForecast(7),
-          api.getAccuracyMetrics(),
-        ]);
-        const daysArray = Array.isArray(fcast?.days) ? fcast.days : (Array.isArray(fcast?.forecast) ? fcast.forecast : []);
-        setPrediction(pred);
-        setForecastDays(daysArray);
-        setAccuracy(acc);
-      } catch (e) {
-        console.error('Failed to load forecast data:', e);
-      } finally {
-        setLoading(false);
-      }
-    };
     fetchData();
   }, []);
 
-  const fallbackForecastDays: ForecastDayItem[] = Array.from({ length: 7 }).map((_, i) => {
-    const d = new Date();
-    d.setDate(d.getDate() + i + 1);
-    const dateStr = d.toISOString().slice(0, 10);
-    return {
-      date: dateStr,
-      solar_kwh: Math.round(4400 + 400 * Math.sin(i * 1.1)),
-      wind_kwh: Math.round(3100 + 500 * Math.cos(i * 0.9)),
-      total_renewable_kwh: Math.round(7500 + 600 * Math.sin(i)),
-      demand_kwh: Math.round(8400 + 350 * Math.sin(i * 1.5)),
-      confidence_pct: Math.round(92 - i * 2.5),
-    };
-  });
-
-  const activeForecastDays = forecastDays.length > 0 ? forecastDays : fallbackForecastDays;
-
-  const chartData = activeForecastDays.map((d) => ({
+  const chartData = forecastDays.map((d) => ({
     date: d.date ? (d.date.length > 5 ? d.date.slice(5) : d.date) : `Day ${d}`,
     Solar: Math.round(d.solar_kwh),
     Wind: Math.round(d.wind_kwh),
@@ -74,20 +64,7 @@ export const ForecastPage: React.FC = () => {
     Predicted: Math.round(p.solar_pred),
   })) || [];
 
-  const rawBenchmark = accuracy?.comparative_24h_benchmark || [];
-  const fallbackBenchmark = Array.from({ length: 24 }).map((_, h) => {
-    const isDay = h >= 6 && h <= 18;
-    const factor = isDay ? Math.sin(((h - 6) / 12) * Math.PI) : 0;
-    return {
-      hour: h,
-      time: `${h < 10 ? '0' : ''}${h}:00`,
-      clearsky_envelope_kw: Math.round(factor * 1150),
-      predicted_kw: Math.round(factor * 980),
-      persistence_kw: Math.round(factor * 1060 + (h === 11 ? -120 : 0)),
-      actual_kw: Math.round(factor * 970 + (h === 13 ? -60 : 0)),
-    };
-  });
-  const benchmarkData = rawBenchmark.length > 0 ? rawBenchmark : fallbackBenchmark;
+  const benchmarkData = accuracy?.comparative_24h_benchmark || [];
 
   return (
     <motion.div
@@ -120,6 +97,33 @@ export const ForecastPage: React.FC = () => {
           </span>
         </div>
       </div>
+
+      {/* Loading state */}
+      {loading && (
+        <div className="flex items-center justify-center p-12 scada-panel">
+          <RefreshCw className="w-6 h-6 text-teal animate-spin mr-3" />
+          <span className="font-mono text-sm text-text-dim">Evaluating day-ahead ML ensemble and 7-day multi-horizon forecast...</span>
+        </div>
+      )}
+
+      {/* Error state */}
+      {error && !loading && (
+        <div className="scada-panel p-4 border-red/40 bg-red/10 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <AlertTriangle className="w-5 h-5 text-red" />
+            <div>
+              <p className="text-xs font-bold text-red font-mono">Prediction API Disconnected</p>
+              <p className="text-[11px] text-text-dim">{error}</p>
+            </div>
+          </div>
+          <button
+            onClick={fetchData}
+            className="px-3 py-1 rounded bg-panel-2 border border-line text-xs font-mono text-teal hover:border-teal/50"
+          >
+            Retry
+          </button>
+        </div>
+      )}
 
       {/* Tomorrow 24-Hour Horizon Highlights */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">

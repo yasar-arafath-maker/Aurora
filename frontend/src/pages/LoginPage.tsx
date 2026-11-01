@@ -44,8 +44,8 @@ const GridParticles: React.FC = () => {
 
 export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess }) => {
   const { login, isLoading } = useAuth();
-  const [email, setEmail] = useState<string>('operator@aurora.grid');
-  const [password, setPassword] = useState<string>('Operator@123');
+  const [email, setEmail] = useState<string>('');
+  const [password, setPassword] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -59,16 +59,9 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess }) => {
     }
   };
 
-  const handleQuickLogin = async (demoEmail: string, demoPass: string) => {
-    setEmail(demoEmail);
-    setPassword(demoPass);
+  const handleSelectRole = (roleEmail: string) => {
+    setEmail(roleEmail);
     setError(null);
-    try {
-      await login(demoEmail, demoPass);
-      onSuccess();
-    } catch (err: any) {
-      setError(err.message || 'Authentication failed');
-    }
   };
 
   return (
@@ -199,38 +192,41 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess }) => {
           </motion.button>
         </motion.form>
 
-        {/* Quick Demo Credentials */}
-        <motion.div
-          className="mt-6 pt-4 border-t border-line text-xs font-mono"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.8, duration: 0.5 }}
-        >
-          <p className="text-[11px] text-text-dim uppercase tracking-wider mb-2 text-center">
-            One-Click Evaluation Roles:
-          </p>
-          <div className="grid grid-cols-3 gap-2">
-            {[
-              { email: 'admin@aurora.grid', pass: 'Admin@123', label: 'ADMIN', sublabel: 'Full Control', color: 'teal', hoverBorder: 'hover:border-teal/50' },
-              { email: 'operator@aurora.grid', pass: 'Operator@123', label: 'OPERATOR', sublabel: 'Dispatch Ops', color: 'amber', hoverBorder: 'hover:border-amber/50' },
-              { email: 'viewer@aurora.grid', pass: 'Viewer@123', label: 'VIEWER', sublabel: 'Read Only', color: 'blue', hoverBorder: 'hover:border-blue/50' },
-            ].map((role, i) => (
-              <motion.button
-                key={role.label}
-                onClick={() => handleQuickLogin(role.email, role.pass)}
-                className={`p-2 rounded bg-panel-2 border border-line ${role.hoverBorder} text-${role.color} text-[10px] text-center transition-colors`}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.9 + i * 0.1, duration: 0.4 }}
-                whileHover={{ scale: 1.05, y: -2 }}
-                whileTap={{ scale: 0.95 }}
-              >
-                <span className="font-bold block">{role.label}</span>
-                <span className="text-[9px] text-text-dim">{role.sublabel}</span>
-              </motion.button>
-            ))}
-          </div>
-        </motion.div>
+        {/* Quick Role Fill (Development/Evaluation Only) */}
+        {!import.meta.env.PROD && (
+          <motion.div
+            className="mt-6 pt-4 border-t border-line text-xs font-mono"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.8, duration: 0.5 }}
+          >
+            <p className="text-[11px] text-text-dim uppercase tracking-wider mb-2 text-center">
+              Operator Role Fill:
+            </p>
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { email: 'admin@aurora.grid', label: 'ADMIN', sublabel: 'Full Control', color: 'teal', hoverBorder: 'hover:border-teal/50' },
+                { email: 'operator@aurora.grid', label: 'OPERATOR', sublabel: 'Dispatch Ops', color: 'amber', hoverBorder: 'hover:border-amber/50' },
+                { email: 'viewer@aurora.grid', label: 'VIEWER', sublabel: 'Read Only', color: 'blue', hoverBorder: 'hover:border-blue/50' },
+              ].map((role, i) => (
+                <motion.button
+                  key={role.label}
+                  type="button"
+                  onClick={() => handleSelectRole(role.email)}
+                  className={`p-2 rounded bg-panel-2 border border-line ${role.hoverBorder} text-${role.color} text-[10px] text-center transition-colors`}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.9 + i * 0.1, duration: 0.4 }}
+                  whileHover={{ scale: 1.05, y: -2 }}
+                  whileTap={{ scale: 0.95 }}
+                >
+                  <span className="font-bold block">{role.label}</span>
+                  <span className="text-[9px] text-text-dim">{role.sublabel}</span>
+                </motion.button>
+              ))}
+            </div>
+          </motion.div>
+        )}
       </motion.div>
     </div>
   );

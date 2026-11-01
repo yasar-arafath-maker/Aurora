@@ -1,0 +1,16 @@
+<resources>
+    <string name="app_name">அரோரா சோலார்</string>
+    <string name="title_now">இப்போது (காலி இடம்)</string>
+    <string name="title_with_solar">சோலார் வைத்தபின்</string>
+    <string name="drag_hint">இடது / வலதுபுறம் நகர்த்தி பாருங்கள் ↔</string>
+    <string name="monthly_savings">மாத சேமிப்பு</string>
+    <string name="system_size">சோலார் திறன்</string>
+    <string name="green_units">இலவச கரண்ட்</string>
+    <string name="subsidy_text">அரசு மானியம்</string>
+    <string name="panels_count">%d பேனல்கள்</string>
+    <string name="snap_camera">கேமரா படம் எடு</string>
+    <string name="call_expert">📞 சோலார் நிபுணருடன் பேச</string>
+    <string name="share_whatsapp">💬 வாட்ஸ்அப் பகிர்</string>
+    <string name="net_cost">மானியம் போக நிகர செலவு</string>
+    <string name="lifetime_savings">25 ஆண்டு மொத்த சேமிப்பு</string>
+</resources>

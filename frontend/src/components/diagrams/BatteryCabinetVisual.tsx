@@ -8,15 +8,16 @@ interface BatteryCabinetVisualProps {
 }
 
 export const BatteryCabinetVisual: React.FC<BatteryCabinetVisualProps> = ({ status }) => {
-  const soc = status?.current_soc_pct ?? 68.5;
-  const capacityKwh = status?.capacity_kwh ?? 2500;
-  const storedKwh = status?.stored_kwh ?? (capacityKwh * soc) / 100;
-  const tempC = status?.cell_temp_c ?? 24.8;
-  const voltage = status?.voltage_v ?? 765.2;
-  const current = status?.current_a ?? 196.0;
-  const state = status?.status ?? 'CHARGING';
-  const hours = status?.estimated_remaining_hours ?? 5.2;
-  const soh = status?.state_of_health_pct ?? 98.4;
+  const s = status as any;
+  const soc = s?.current_soc_pct ?? (s?.soc_pct !== undefined ? (s.soc_pct <= 1 ? s.soc_pct * 100 : s.soc_pct) : 68.5);
+  const capacityKwh = s?.capacity_kwh ?? 2500;
+  const storedKwh = s?.stored_kwh ?? (capacityKwh * soc) / 100;
+  const tempC = s?.cell_temp_c ?? s?.temperature_c ?? 24.8;
+  const voltage = s?.voltage_v ?? s?.voltage ?? 765.2;
+  const current = s?.current_a ?? s?.current ?? 196.0;
+  const state = s?.status ?? s?.health_state ?? 'CHARGING';
+  const hours = s?.estimated_remaining_hours ?? s?.estimated_backup_hours ?? 5.2;
+  const soh = s?.state_of_health_pct ?? 98.4;
 
   // 16 modular rack trays
   const totalRacks = 16;

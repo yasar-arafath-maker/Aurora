@@ -12,3 +12,9 @@ env/
 *.log
 .DS_Store
 Thumbs.db
+.tools/
+edge_cdp_profile/
+backend/app/demo_data/cache/
+_extracted_media/
+.gradle/
+**/build/

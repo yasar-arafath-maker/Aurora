@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.api.v1 import auth, weather, energy, prediction, battery, simulation, alerts, reports, settings, grid, data_mgmt, site
+from app.api.v1 import auth, weather, energy, prediction, battery, simulation, alerts, reports, settings, grid, data_mgmt, site, telemetry_ws
 
 api_router = APIRouter()
 
@@ -15,3 +15,4 @@ api_router.include_router(reports.router)
 api_router.include_router(settings.router)
 api_router.include_router(data_mgmt.router)
 api_router.include_router(site.router)
+api_router.include_router(telemetry_ws.router)

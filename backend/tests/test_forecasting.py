@@ -30,3 +30,16 @@ def test_accuracy_metrics_structure():
     assert "wind_r2" in acc
     assert acc["solar_r2"] > 0.80
     assert acc["wind_r2"] > 0.80
+    assert "solar_skill_score_pct" in acc
+    assert acc["solar_skill_score_pct"] > 0  # Must beat persistence baseline!
+    assert "solar_persistence_rmse" in acc
+    assert acc["solar_persistence_rmse"] > acc["solar_rmse"]  # ML must have lower error than persistence
+    assert "comparative_24h_benchmark" in acc
+    assert len(acc["comparative_24h_benchmark"]) == 24
+    for pt in acc["comparative_24h_benchmark"]:
+        assert "clearsky_envelope_kw" in pt
+        assert "predicted_kw" in pt
+        assert "persistence_kw" in pt
+        assert "actual_kw" in pt
+        # Prediction must be physically bounded by clearsky envelope
+        assert pt["predicted_kw"] <= pt["clearsky_envelope_kw"] + 1e-3

@@ -24,8 +24,28 @@ import { X, AlertTriangle, CheckCircle2 } from 'lucide-react';
 
 const MainLayout: React.FC = () => {
   const { isAuthenticated } = useAuth();
-  const [activePage, setActivePage] = useState<PageId>('dashboard');
+  
+  const getInitialPage = (): PageId => {
+    const path = window.location.pathname.replace('/', '').toLowerCase() as PageId;
+    const validPages: PageId[] = ['dashboard', 'solar', 'forecast', 'battery', 'grid', 'weather', 'scenario', 'reports', 'settings'];
+    return validPages.includes(path) ? path : 'dashboard';
+  };
+
+  const [activePage, setActivePageState] = useState<PageId>(getInitialPage);
   const [alertsModalOpen, setAlertsModalOpen] = useState<boolean>(false);
+
+  const setActivePage = (page: PageId) => {
+    setActivePageState(page);
+    window.history.pushState(null, '', `/${page}`);
+  };
+
+  React.useEffect(() => {
+    const handlePopState = () => {
+      setActivePageState(getInitialPage());
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
 
   if (!isAuthenticated) {
     return <LoginPage onSuccess={() => setActivePage('dashboard')} />;
@@ -55,8 +75,6 @@ const MainLayout: React.FC = () => {
         return <ScenarioLabPage />;
       case 'reports':
         return <ReportsPage />;
-      case 'data':
-        return <DataManagementPage />;
       case 'settings':
         return <SettingsPage />;
       default:

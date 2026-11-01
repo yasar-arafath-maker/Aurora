@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { api, OptimizationResult, TomorrowPrediction, SystemAlert } from '../services/api';
 import { useSystem } from '../context/SystemContext';
 import { ScadaPanel } from '../components/common/ScadaPanel';
@@ -6,8 +6,35 @@ import { AnimatedCounter } from '../components/common/AnimatedCounter';
 import { RadialGauge } from '../components/common/RadialGauge';
 import { EnergyFlowDiagram } from '../components/diagrams/EnergyFlowDiagram';
 import { StatusBadge } from '../components/layout/StatusBadge';
-import { Sun, Wind, Zap, Factory, BatteryCharging, ArrowUpRight, AlertTriangle, Cpu, CheckCircle2, Sparkles, ArrowRight, Layers } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { LiveSpaceScanner } from '../components/scanner/LiveSpaceScanner';
+import { MobileSolarApp } from '../components/mobile/MobileSolarApp';
+import { sounds } from '../lib/soundEffects';
+import {
+  Sun,
+  Zap,
+  BatteryCharging,
+  ArrowUpRight,
+  AlertTriangle,
+  Cpu,
+  CheckCircle2,
+  Sparkles,
+  ArrowRight,
+  Layers,
+  Camera,
+  Sliders,
+  DollarSign,
+  Leaf,
+  Clock,
+  TrendingUp,
+  RefreshCw,
+  Eye,
+  Wrench,
+  ShieldCheck,
+  ChevronDown,
+  ChevronUp,
+  Smartphone
+} from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 interface DashboardPageProps {
   onNavigateToBattery: () => void;
@@ -26,6 +53,24 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
   const [alerts, setAlerts] = useState<SystemAlert[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
 
+  // Dynamic Interactive Dashboard States
+  const [timeHour, setTimeHour] = useState<number>(12); // 6 to 22 (12 PM default)
+  const [systemSizeKw, setSystemSizeKw] = useState<number>(3.6); // default 3.6 kW
+  const [batteryMode, setBatteryMode] = useState<'smart' | 'reserve' | 'export'>('smart');
+  const [monthlyBill, setMonthlyBill] = useState<number>(3500); // in ₹
+  const [showAdvancedScada, setShowAdvancedScada] = useState<boolean>(false);
+  const [isOptimizing, setIsOptimizing] = useState<boolean>(false);
+  const [activeTab, setActiveTab] = useState<'overview' | 'scanner' | 'fixes' | 'roi'>('overview');
+  const [showMobileSimulator, setShowMobileSimulator] = useState<boolean>(false);
+
+  // Scanner applied configuration
+  const [scannedConfig, setScannedConfig] = useState<{
+    spaceId: string;
+    fixMethodId: string;
+    capacityKw: number;
+    monthlySavingsNum: number;
+  } | null>(null);
+
   useEffect(() => {
     let active = true;
     const loadDashboardData = async () => {
@@ -33,7 +78,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
         const [optData, predData, alertData] = await Promise.all([
           api.optimizeBattery(),
           api.getTomorrowPrediction(),
-          api.getAlerts(),
+          api.getAlerts()
         ]);
         if (active) {
           setOptimization(optData);
@@ -49,353 +94,698 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
     loadDashboardData();
   }, []);
 
-  const recStorage = optimization?.recommended_charge_kwh ?? 1420.5;
-  const targetSoc = optimization?.target_soc_pct ?? 82.5;
-  const action = optimization?.recommendation_action ?? 'CHARGE';
-  const confidence = prediction?.confidence_score_pct ?? 94.2;
+  // Dynamic Solar Calculations based on Time of Day slider & System Size
+  const solarFactor = useMemo(() => {
+    if (timeHour < 6 || timeHour > 18.5) return 0;
+    // Normalized bell curve: peak at 12.5 PM
+    const x = (timeHour - 6) / 12.5; // 0 to 1
+    return Math.max(0, Math.sin(x * Math.PI));
+  }, [timeHour]);
+
+  const activeKwCapacity = scannedConfig ? scannedConfig.capacityKw : systemSizeKw;
+
+  const dynamicSolarKw = Number((activeKwCapacity * solarFactor * 0.95).toFixed(2));
+  const dynamicDemandKw = Number((1.2 + (timeHour >= 18 && timeHour <= 22 ? 1.5 : 0.4)).toFixed(2));
+
+  // Dynamic Battery SOC & Flow
+  const dynamicBatterySoc = useMemo(() => {
+    if (batteryMode === 'reserve') return 85.0;
+    // Charge during daytime sun, discharge in evening
+    const baseSoc = 50 + solarFactor * 42 - (timeHour > 18 ? (timeHour - 18) * 8 : 0);
+    return Math.min(100, Math.max(20, Number(baseSoc.toFixed(1))));
+  }, [timeHour, solarFactor, batteryMode]);
+
+  const dynamicGridExportKw = Number(
+    Math.max(0, dynamicSolarKw - dynamicDemandKw - (dynamicBatterySoc < 90 ? 1.0 : 0)).toFixed(2)
+  );
+
+  // Financial calculations
+  const unitRateRs = 8.5; // ₹ per kWh
+  const todaySolarKwh = Number((activeKwCapacity * 4.6 * (timeHour / 18)).toFixed(1));
+  const todaySavedRs = Math.round(todaySolarKwh * unitRateRs);
+  const monthlySavingsEstRs = scannedConfig
+    ? scannedConfig.monthlySavingsNum
+    : Math.round(activeKwCapacity * 125 * unitRateRs);
+
+  // 1-Tap Quick Optimization trigger
+  const triggerOneTapOptimize = () => {
+    sounds.playScanBeep();
+    setIsOptimizing(true);
+    setTimeout(() => {
+      sounds.playSuccessChime();
+      setIsOptimizing(false);
+      setBatteryMode('smart');
+    }, 1200);
+  };
+
+  const handleConfigAppliedFromScanner = (config: any) => {
+    setScannedConfig(config);
+    setSystemSizeKw(config.capacityKw);
+    sounds.playSuccessChime();
+  };
 
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ duration: 0.5 }}
-      className="space-y-6"
-    >
-      {/* Primary SCADA Question Answer Banner */}
+    <div className="space-y-6 pb-12">
+      {/* ═══════════════════════════════════════════════════════════════════════
+          HERO STATUS & INTERACTIVE ACTION CONTROL BAR
+          ═══════════════════════════════════════════════════════════════════════ */}
       <motion.div
         initial={{ opacity: 0, y: 15 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
         className="scada-panel p-5 bg-gradient-to-r from-panel via-panel-2 to-panel border-teal/40 glow-teal relative shadow-xl overflow-hidden"
       >
-        <div className="absolute top-0 right-0 w-80 h-80 bg-teal/5 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute top-0 right-0 w-96 h-96 bg-teal/5 rounded-full blur-3xl pointer-events-none" />
 
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 relative z-10">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5 relative z-10">
           <div className="space-y-2">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-teal/20 text-teal uppercase tracking-widest border border-teal/40 shadow-sm flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-teal animate-ping" />
-                DISPATCH OBJECTIVE FOR TOMORROW
+                <span>DYNAMIC INTERACTIVE SOLAR DASHBOARD</span>
               </span>
-              {isDemoMode && <StatusBadge status="DEMO" label="SYNTHETIC EVALUATION" />}
-            </div>
-
-            <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-text-main">
-              How much energy should the grid battery store today to prepare for tomorrow?
-            </h2>
-
-            <div className="flex items-baseline gap-3 flex-wrap">
-              <motion.span
-                initial={{ scale: 0.9 }}
-                animate={{ scale: 1 }}
-                transition={{ type: 'spring', stiffness: 300, damping: 20 }}
-                className="text-3xl sm:text-4xl font-extrabold font-mono text-teal drop-shadow-md"
-              >
-                <AnimatedCounter value={recStorage} decimals={1} suffix="kWh" />
-              </motion.span>
-              <span className="text-sm font-mono text-text-dim">
-                (Target SOC: <span className="font-bold text-teal">{targetSoc.toFixed(1)}%</span>)
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber/20 text-amber border border-amber/40">
+                1-TAP SIMULATOR
               </span>
-              <span
-                className={`text-xs font-mono font-bold px-2.5 py-1 rounded border shadow-sm ${
-                  action === 'CHARGE'
-                    ? 'bg-teal/20 text-teal border-teal/50 animate-pulse'
-                    : 'bg-amber/20 text-amber border-amber/50'
-                }`}
-              >
-                ACTION: {action}
-              </span>
-            </div>
-
-            {/* AI Advisor / Operational Explanation */}
-            <motion.div
-              whileHover={{ scale: 1.01 }}
-              className="mt-3 p-3 rounded bg-bg/80 border border-line flex items-start gap-2.5 shadow-sm"
-            >
-              <Cpu className="w-4 h-4 text-teal shrink-0 mt-0.5 animate-pulse" />
-              <div>
-                <p className="text-[10px] font-mono text-teal uppercase tracking-wide">
-                  [EXPLANATION ENGINE: SYNTHESIZED FROM DETERMINISTIC CALCULATIONS]
-                </p>
-                <p className="text-xs text-text-main mt-0.5 leading-relaxed font-mono">
-                  {optimization?.advisory_narrative ||
-                    `Tomorrow exhibits expected renewable deficit of ${Math.abs(
-                      (prediction?.expected_deficit_kwh ?? 1250)
-                    ).toFixed(0)} kWh. Charge ${recStorage.toFixed(0)} kWh today at 92% roundtrip efficiency to reach ${targetSoc.toFixed(1)}% SOC, guaranteeing a 15% reserve buffer against morning peak demand.`}
-                </p>
-              </div>
-            </motion.div>
-          </div>
-
-          {/* Right Action / Confidence Dial */}
-          <div className="flex items-center gap-4 shrink-0 justify-center">
-            <RadialGauge
-              value={confidence}
-              label="Model Confidence"
-              sublabel="Ensemble"
-              unit="%"
-              color="teal"
-              size={120}
-            />
-            <div className="flex flex-col gap-2">
-              <motion.button
-                whileHover={{ scale: 1.05, y: -2 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={onNavigateToBattery}
-                className="px-4 py-2 rounded bg-teal text-bg font-bold text-xs hover:bg-teal/90 transition-all flex items-center gap-1.5 shadow-glow-teal font-mono uppercase tracking-wider"
-              >
-                <span>Audit Derivation</span>
-                <ArrowUpRight className="w-4 h-4" />
-              </motion.button>
-              <motion.button
-                whileHover={{ scale: 1.05, y: -2 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={onNavigateToForecast}
-                className="px-4 py-2 rounded bg-panel-2 border border-line text-text-main font-semibold text-xs hover:border-teal/50 hover:bg-panel transition-all font-mono uppercase tracking-wider text-center shadow-sm"
-              >
-                Inspect Forecast
-              </motion.button>
-            </div>
-          </div>
-        </div>
-      </motion.div>
-
-      {/* Real-time Telemetry Stat Strip */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-        {/* Solar */}
-        <motion.div
-          whileHover={{ y: -3, scale: 1.02 }}
-          transition={{ type: 'spring', stiffness: 400, damping: 25 }}
-          onClick={onNavigateToSolar}
-          className="scada-panel p-3 border-amber/40 glow-amber cursor-pointer shadow-sm group"
-          title="Click to launch 3D Photovoltaic Studio & Digital Twin"
-        >
-          <div className="flex items-center justify-between text-text-dim text-[11px] mb-1">
-            <span className="font-semibold uppercase text-amber flex items-center gap-1">
-              <span>Solar Gen</span>
-              <span className="text-[8px] px-1 py-0.2 rounded bg-amber/20 text-amber font-mono group-hover:bg-amber group-hover:text-bg transition-colors">3D</span>
-            </span>
-            <Sun className="w-3.5 h-3.5 text-amber animate-spin-slow" />
-          </div>
-          <p className="text-lg font-bold font-mono text-amber">
-            <AnimatedCounter value={telemetry?.solar_kw ?? 685.4} decimals={1} suffix="kW" />
-          </p>
-          <span className="text-[10px] text-text-dim font-mono group-hover:text-amber transition-colors flex items-center gap-1">
-            <span>780 W/m²</span>
-            <span>• 3D Twin →</span>
-          </span>
-        </motion.div>
-
-        {/* Wind */}
-        <motion.div
-          whileHover={{ y: -3, scale: 1.02 }}
-          transition={{ type: 'spring', stiffness: 400, damping: 25 }}
-          className="scada-panel p-3 border-blue/30 cursor-pointer shadow-sm"
-        >
-          <div className="flex items-center justify-between text-text-dim text-[11px] mb-1">
-            <span className="font-semibold uppercase">Wind Gen</span>
-            <Wind className="w-3.5 h-3.5 text-blue" />
-          </div>
-          <p className="text-lg font-bold font-mono text-blue">
-            <AnimatedCounter value={telemetry?.wind_kw ?? 412.0} decimals={1} suffix="kW" />
-          </p>
-          <span className="text-[10px] text-text-dim font-mono">Wind 8.2 m/s</span>
-        </motion.div>
-
-        {/* Total Renewable */}
-        <motion.div
-          whileHover={{ y: -3, scale: 1.02 }}
-          transition={{ type: 'spring', stiffness: 400, damping: 25 }}
-          className="scada-panel p-3 border-teal/30 cursor-pointer shadow-sm"
-        >
-          <div className="flex items-center justify-between text-text-dim text-[11px] mb-1">
-            <span className="font-semibold uppercase">Total Renew</span>
-            <Zap className="w-3.5 h-3.5 text-teal" />
-          </div>
-          <p className="text-lg font-bold font-mono text-teal">
-            <AnimatedCounter value={telemetry?.total_renewable_kw ?? 1097.4} decimals={1} suffix="kW" />
-          </p>
-          <span className="text-[10px] text-text-dim font-mono">100% Inverter Online</span>
-        </motion.div>
-
-        {/* Facility Demand */}
-        <motion.div
-          whileHover={{ y: -3, scale: 1.02 }}
-          transition={{ type: 'spring', stiffness: 400, damping: 25 }}
-          className="scada-panel p-3 border-line cursor-pointer shadow-sm"
-        >
-          <div className="flex items-center justify-between text-text-dim text-[11px] mb-1">
-            <span className="font-semibold uppercase">Facility Load</span>
-            <Factory className="w-3.5 h-3.5 text-text-dim" />
-          </div>
-          <p className="text-lg font-bold font-mono text-text-main">
-            <AnimatedCounter value={telemetry?.demand_kw ?? 850.2} decimals={1} suffix="kW" />
-          </p>
-          <span className="text-[10px] text-text-dim font-mono">Industrial feeder</span>
-        </motion.div>
-
-        {/* Battery SOC */}
-        <motion.div
-          whileHover={{ y: -3, scale: 1.02 }}
-          transition={{ type: 'spring', stiffness: 400, damping: 25 }}
-          className="scada-panel p-3 border-teal/40 glow-teal cursor-pointer shadow-sm"
-        >
-          <div className="flex items-center justify-between text-text-dim text-[11px] mb-1">
-            <span className="font-semibold uppercase">Battery SOC</span>
-            <BatteryCharging className="w-3.5 h-3.5 text-teal animate-pulse" />
-          </div>
-          <p className="text-lg font-bold font-mono text-teal">
-            <AnimatedCounter value={telemetry?.battery_soc_pct ?? 68.5} decimals={1} suffix="%" />
-          </p>
-          <span className="text-[10px] text-teal font-mono">Charging (+150 kW)</span>
-        </motion.div>
-
-        {/* Grid Interchange */}
-        <motion.div
-          whileHover={{ y: -3, scale: 1.02 }}
-          transition={{ type: 'spring', stiffness: 400, damping: 25 }}
-          className="scada-panel p-3 border-green/30 cursor-pointer shadow-sm"
-        >
-          <div className="flex items-center justify-between text-text-dim text-[11px] mb-1">
-            <span className="font-semibold uppercase">Grid Export</span>
-            <Zap className="w-3.5 h-3.5 text-green" />
-          </div>
-          <p className="text-lg font-bold font-mono text-green">
-            <AnimatedCounter value={telemetry?.grid_export_kw ?? 247.2} decimals={1} suffix="kW" />
-          </p>
-          <span className="text-[10px] text-green font-mono">Net Supplier to PCC</span>
-        </motion.div>
-      </div>
-
-      {/* Main Grid Interactive Visual + Key Indicators */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2">
-          <ScadaPanel
-            title="Active Microgrid Energy Flow"
-            subtitle="Real-time multi-bus topology with dynamic power direction vectors"
-            accentTop
-          >
-            <EnergyFlowDiagram data={telemetry} />
-          </ScadaPanel>
-        </div>
-
-        <div className="space-y-4">
-          {/* Tomorrow 24h Summary */}
-          <ScadaPanel title="Tomorrow 24h Yield Outlook" subtitle="ML Quantile Forecast">
-            <div className="space-y-3 font-mono text-xs">
-              <motion.div whileHover={{ x: 2 }} className="flex items-center justify-between p-2.5 rounded bg-panel-2 border border-line">
-                <span className="text-text-dim">Solar Yield</span>
-                <span className="font-bold text-amber">
-                  {(prediction?.predicted_solar_kwh ?? 4250).toFixed(0)} kWh
+              {scannedConfig && (
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-green/20 text-green border border-green/40">
+                  SCAN APPLIED: {scannedConfig.capacityKw} kW
                 </span>
-              </motion.div>
-              <motion.div whileHover={{ x: 2 }} className="flex items-center justify-between p-2.5 rounded bg-panel-2 border border-line">
-                <span className="text-text-dim">Wind Yield</span>
-                <span className="font-bold text-blue">
-                  {(prediction?.predicted_wind_kwh ?? 3100).toFixed(0)} kWh
-                </span>
-              </motion.div>
-              <motion.div whileHover={{ x: 2 }} className="flex items-center justify-between p-2.5 rounded bg-panel-2 border border-line">
-                <span className="text-text-dim">Expected Demand</span>
-                <span className="font-bold text-text-main">
-                  {(prediction?.expected_demand_kwh ?? 8600).toFixed(0)} kWh
-                </span>
-              </motion.div>
-              <motion.div whileHover={{ x: 2 }} className="flex items-center justify-between p-2.5 rounded bg-red/10 border border-red/30">
-                <span className="text-red font-semibold">Net Deficit</span>
-                <span className="font-bold text-red">
-                  -{(prediction?.expected_deficit_kwh ?? 1250).toFixed(0)} kWh
-                </span>
-              </motion.div>
-            </div>
-          </ScadaPanel>
-
-          {/* Active SCADA Alarms */}
-          <ScadaPanel
-            title="SCADA Operational Alarms"
-            subtitle="Automated subsystem monitors"
-            badge={
-              <span className="text-[10px] font-mono px-1.5 py-0.5 bg-amber/20 text-amber rounded border border-amber/30">
-                {alerts.length} ALARMS
-              </span>
-            }
-          >
-            <div className="space-y-2">
-              {alerts.length === 0 ? (
-                <div className="p-3 rounded bg-panel-2 text-center text-xs text-text-dim flex items-center justify-center gap-1.5">
-                  <CheckCircle2 className="w-4 h-4 text-green" />
-                  <span>All microgrid systems nominal</span>
-                </div>
-              ) : (
-                alerts.slice(0, 3).map((al) => (
-                  <motion.div
-                    key={al.id}
-                    whileHover={{ x: 2 }}
-                    className="p-2.5 rounded bg-panel-2 border border-line flex items-start gap-2 text-xs font-mono hover:border-line/80 transition-colors"
-                  >
-                    <AlertTriangle
-                      className={`w-3.5 h-3.5 shrink-0 mt-0.5 ${
-                        al.severity === 'WARNING' ? 'text-amber' : 'text-red'
-                      }`}
-                    />
-                    <div className="overflow-hidden">
-                      <p className="text-text-main font-semibold truncate">{al.message}</p>
-                      <p className="text-[10px] text-text-dim mt-0.5">
-                        {al.subsystem} • {al.value}
-                      </p>
-                    </div>
-                  </motion.div>
-                ))
               )}
             </div>
-          </ScadaPanel>
-        </div>
-      </div>
 
-      {/* Featured 3D Solar Photovoltaic Digital Twin Card */}
-      <motion.div
-        whileHover={{ scale: 1.005 }}
-        transition={{ duration: 0.2 }}
-        className="scada-panel p-5 bg-gradient-to-r from-panel via-panel-2 to-panel border-amber/40 glow-amber relative shadow-xl overflow-hidden"
-      >
-        <div className="absolute top-0 right-0 w-72 h-72 bg-amber/5 rounded-full blur-3xl pointer-events-none" />
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 relative z-10">
-          <div className="flex items-start gap-3.5">
-            <div className="w-10 h-10 rounded-lg bg-amber/20 border border-amber/40 flex items-center justify-center shrink-0 shadow-sm text-amber">
-              <Sun className="w-5 h-5 animate-spin-slow" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="text-sm font-bold text-text-main flex items-center gap-1.5">
-                  <span>3D Solar Array Digital Twin & WebXR Photovoltaic Studio</span>
-                </h3>
-                <span className="text-[9px] font-mono font-bold px-1.5 py-0.2 rounded bg-amber/20 text-amber border border-amber/40">
-                  NEW FEATURE
-                </span>
-                <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-teal/20 text-teal">
-                  MCDA + XAI ACTIVE
-                </span>
-              </div>
-              <p className="text-xs text-text-dim mt-1 max-w-2xl font-mono leading-relaxed">
-                Interact with the 1:1 scale photovoltaic rooftop twin. Analyze FLIR thermal heatmap derating, aerodynamic wind flow, 3D module telemetry HUDs, shade obstacle casting, and 25-year financial LCOE.
-              </p>
-            </div>
+            <h1 className="text-xl sm:text-2xl lg:text-3xl font-extrabold tracking-tight text-text-main flex items-center gap-2">
+              <span>Smart Solar Power Station</span>
+              <Sun className="w-6 h-6 text-amber animate-spin-slow inline-block" />
+            </h1>
+
+            <p className="text-xs sm:text-sm text-text-dim font-mono max-w-2xl leading-relaxed">
+              Camera-ready solar fitting & dynamic power simulator. Move sliders to test sunlight, scan any place with your camera, and see short, simple fix guides!
+            </p>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
+          {/* Interactive Hero Action Buttons */}
+          <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+            {/* Mobile App Mode: Now vs With Solar */}
             <motion.button
-              whileHover={{ scale: 1.05 }}
+              whileHover={{ scale: 1.05, y: -2 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => {
+                sounds.playClick(950);
+                setShowMobileSimulator(true);
+              }}
+              className="px-4 py-2.5 rounded bg-gradient-to-r from-amber via-orange-500 to-amber text-slate-950 font-black font-mono text-xs uppercase tracking-wider flex items-center gap-2 shadow-lg shadow-amber/30 transition-all border border-amber/70 animate-pulse"
+            >
+              <Smartphone className="w-4 h-4" />
+              <span>📱 Mobile App (Now vs Solar)</span>
+            </motion.button>
+
+            {/* Open Camera Space Scanner Hero Button */}
+            <motion.button
+              whileHover={{ scale: 1.05, y: -2 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => {
+                sounds.playScanBeep();
+                setActiveTab('scanner');
+              }}
+              className="px-4 py-2.5 rounded bg-gradient-to-r from-teal to-emerald-400 text-bg font-bold font-mono text-xs uppercase tracking-wider flex items-center gap-2 shadow-glow-teal transition-all"
+            >
+              <Camera className="w-4 h-4 animate-pulse" />
+              <span>Scan Place with Camera</span>
+            </motion.button>
+
+            {/* 1-Tap Smart Optimize Button */}
+            <motion.button
+              whileHover={{ scale: 1.05, y: -2 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={triggerOneTapOptimize}
+              disabled={isOptimizing}
+              className="px-3.5 py-2.5 rounded bg-panel-2 border border-teal/50 hover:border-teal text-text-main font-mono text-xs font-semibold flex items-center gap-1.5 shadow-sm transition-all"
+            >
+              <Sparkles className={`w-4 h-4 text-teal ${isOptimizing ? 'animate-spin' : ''}`} />
+              <span>{isOptimizing ? 'Optimizing…' : '1-Tap Optimize'}</span>
+            </motion.button>
+
+            {/* 3D Photovoltaic Studio */}
+            <motion.button
+              whileHover={{ scale: 1.05, y: -2 }}
               whileTap={{ scale: 0.95 }}
               onClick={onNavigateToSolar}
-              className="px-4 py-2.5 rounded bg-amber text-bg font-bold text-xs uppercase tracking-wider hover:bg-amber/90 transition-all flex items-center gap-1.5 shadow-glow-amber font-mono"
+              className="px-3.5 py-2.5 rounded bg-panel-2 border border-line hover:border-amber/50 text-text-main font-mono text-xs font-semibold flex items-center gap-1.5 transition-all"
             >
-              <Sparkles className="w-4 h-4" />
-              <span>Launch 3D Solar Studio</span>
-              <ArrowRight className="w-4 h-4" />
+              <Layers className="w-4 h-4 text-amber" />
+              <span>3D Studio</span>
             </motion.button>
           </div>
         </div>
+
+        {/* ═════════════════════════════════════════════════════════════════════
+            LIVE DYNAMIC SIMULATOR SLIDERS & CONTROLS
+            ═════════════════════════════════════════════════════════════════════ */}
+        <div className="mt-5 pt-4 border-t border-line/60 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 font-mono">
+          {/* Slider 1: Interactive Time of Day / Sun Position */}
+          <div className="p-3 rounded-lg bg-bg/70 border border-line space-y-2">
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-text-dim flex items-center gap-1.5">
+                <Clock className="w-3.5 h-3.5 text-amber" />
+                <span>Time of Day:</span>
+              </span>
+              <span className="font-bold text-amber">
+                {String(Math.floor(timeHour)).padStart(2, '0')}:
+                {timeHour % 1 === 0 ? '00' : '30'}{' '}
+                {timeHour < 12 ? 'AM' : timeHour === 12 ? 'PM' : 'PM'}
+              </span>
+            </div>
+
+            <input
+              type="range"
+              min="6"
+              max="22"
+              step="0.5"
+              value={timeHour}
+              onChange={(e) => {
+                sounds.playClick(400 + Number(e.target.value) * 20);
+                setTimeHour(Number(e.target.value));
+              }}
+              className="w-full accent-amber h-1.5 bg-line rounded-lg cursor-pointer"
+            />
+
+            {/* Quick Time Presets */}
+            <div className="flex items-center justify-between text-[10px] text-text-dim pt-0.5">
+              <button
+                onClick={() => {
+                  sounds.playClick(500);
+                  setTimeHour(7);
+                }}
+                className={`px-1.5 py-0.5 rounded hover:text-amber ${
+                  timeHour === 7 ? 'text-amber font-bold bg-amber/10' : ''
+                }`}
+              >
+                🌅 Dawn
+              </button>
+              <button
+                onClick={() => {
+                  sounds.playClick(700);
+                  setTimeHour(12.5);
+                }}
+                className={`px-1.5 py-0.5 rounded hover:text-amber ${
+                  timeHour === 12.5 ? 'text-amber font-bold bg-amber/10' : ''
+                }`}
+              >
+                ☀️ Peak Noon
+              </button>
+              <button
+                onClick={() => {
+                  sounds.playClick(600);
+                  setTimeHour(17);
+                }}
+                className={`px-1.5 py-0.5 rounded hover:text-amber ${
+                  timeHour === 17 ? 'text-amber font-bold bg-amber/10' : ''
+                }`}
+              >
+                🌇 Dusk
+              </button>
+              <button
+                onClick={() => {
+                  sounds.playClick(400);
+                  setTimeHour(21);
+                }}
+                className={`px-1.5 py-0.5 rounded hover:text-amber ${
+                  timeHour === 21 ? 'text-amber font-bold bg-amber/10' : ''
+                }`}
+              >
+                🌙 Night
+              </button>
+            </div>
+          </div>
+
+          {/* Slider 2: Solar System Size (kW) */}
+          <div className="p-3 rounded-lg bg-bg/70 border border-line space-y-2">
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-text-dim flex items-center gap-1.5">
+                <Sliders className="w-3.5 h-3.5 text-teal" />
+                <span>Solar Array Size:</span>
+              </span>
+              <span className="font-bold text-teal">{activeKwCapacity} kW</span>
+            </div>
+
+            <input
+              type="range"
+              min="1.0"
+              max="10.0"
+              step="0.2"
+              value={activeKwCapacity}
+              onChange={(e) => {
+                sounds.playClick(600 + Number(e.target.value) * 30);
+                setSystemSizeKw(Number(e.target.value));
+              }}
+              className="w-full accent-teal h-1.5 bg-line rounded-lg cursor-pointer"
+            />
+
+            <div className="flex items-center justify-between text-[10px] text-text-dim pt-0.5">
+              <span>Compact 1kW (Balcony)</span>
+              <span>Home 3.6kW</span>
+              <span>Villa 10kW</span>
+            </div>
+          </div>
+
+          {/* Control 3: Battery Smart Modes */}
+          <div className="p-3 rounded-lg bg-bg/70 border border-line space-y-2">
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-text-dim flex items-center gap-1.5">
+                <BatteryCharging className="w-3.5 h-3.5 text-green" />
+                <span>Battery Dispatch Mode:</span>
+              </span>
+              <span className="font-bold text-green">{dynamicBatterySoc}% SOC</span>
+            </div>
+
+            <div className="grid grid-cols-3 gap-1.5 pt-0.5">
+              <button
+                onClick={() => {
+                  sounds.playClick(650);
+                  setBatteryMode('smart');
+                }}
+                className={`py-1 rounded text-[10px] font-bold transition-all ${
+                  batteryMode === 'smart'
+                    ? 'bg-teal text-bg shadow-sm'
+                    : 'bg-panel-2 border border-line text-text-dim hover:text-text-main'
+                }`}
+              >
+                ⚡ Auto Eco
+              </button>
+              <button
+                onClick={() => {
+                  sounds.playClick(750);
+                  setBatteryMode('reserve');
+                }}
+                className={`py-1 rounded text-[10px] font-bold transition-all ${
+                  batteryMode === 'reserve'
+                    ? 'bg-amber text-bg shadow-sm'
+                    : 'bg-panel-2 border border-line text-text-dim hover:text-text-main'
+                }`}
+              >
+                🛡 85% Reserve
+              </button>
+              <button
+                onClick={() => {
+                  sounds.playClick(850);
+                  setBatteryMode('export');
+                }}
+                className={`py-1 rounded text-[10px] font-bold transition-all ${
+                  batteryMode === 'export'
+                    ? 'bg-green text-bg shadow-sm'
+                    : 'bg-panel-2 border border-line text-text-dim hover:text-text-main'
+                }`}
+              >
+                💰 Max Export
+              </button>
+            </div>
+
+            <div className="text-[10px] text-text-dim text-center">
+              {batteryMode === 'smart' && 'Balances home self-consumption & grid reserve'}
+              {batteryMode === 'reserve' && 'Guarantees storm backup against power cut'}
+              {batteryMode === 'export' && 'Exports surplus solar to grid for maximum revenue'}
+            </div>
+          </div>
+        </div>
       </motion.div>
-    </motion.div>
+
+      {/* ═══════════════════════════════════════════════════════════════════════
+          4 CORE DYNAMIC REACTIVE STAT CARDS (CLEAN & SIMPLE)
+          ═══════════════════════════════════════════════════════════════════════ */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Card 1: Solar Power Now */}
+        <motion.div
+          whileHover={{ y: -3, scale: 1.02 }}
+          transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+          className="scada-panel p-4 border-amber/40 glow-amber relative shadow-sm overflow-hidden"
+        >
+          <div className="flex items-center justify-between text-text-dim text-xs mb-1 font-mono">
+            <span className="font-bold uppercase text-amber flex items-center gap-1.5">
+              <Sun className="w-4 h-4 text-amber animate-spin-slow" />
+              <span>Solar Power Now</span>
+            </span>
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber/20 text-amber font-mono">
+              {solarFactor > 0.6 ? 'HIGH' : solarFactor > 0.1 ? 'MODERATE' : 'NIGHT'}
+            </span>
+          </div>
+
+          <div className="flex items-baseline gap-2 mt-2">
+            <span className="text-3xl font-extrabold font-mono text-amber">
+              <AnimatedCounter value={dynamicSolarKw} decimals={2} suffix="kW" />
+            </span>
+          </div>
+
+          <p className="text-[11px] text-text-dim font-mono mt-1 flex items-center justify-between">
+            <span>Peak Irradiance: {Math.round(solarFactor * 940)} W/m²</span>
+            <span className="text-amber">({Math.round(solarFactor * 100)}% Sun)</span>
+          </p>
+        </motion.div>
+
+        {/* Card 2: Today's Financial Savings */}
+        <motion.div
+          whileHover={{ y: -3, scale: 1.02 }}
+          transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+          className="scada-panel p-4 border-green/40 glow-green relative shadow-sm overflow-hidden"
+        >
+          <div className="flex items-center justify-between text-text-dim text-xs mb-1 font-mono">
+            <span className="font-bold uppercase text-green flex items-center gap-1.5">
+              <DollarSign className="w-4 h-4 text-green" />
+              <span>Today Saved</span>
+            </span>
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-green/20 text-green font-mono">
+              {todaySolarKwh} kWh Gen
+            </span>
+          </div>
+
+          <div className="flex items-baseline gap-2 mt-2">
+            <span className="text-3xl font-extrabold font-mono text-green">
+              ₹<AnimatedCounter value={todaySavedRs} decimals={0} />
+            </span>
+            <span className="text-xs text-text-dim font-mono">
+              (~₹{monthlySavingsEstRs.toLocaleString()}/mo)
+            </span>
+          </div>
+
+          <p className="text-[11px] text-text-dim font-mono mt-1 flex items-center justify-between">
+            <span>Tariff: ₹{unitRateRs}/unit</span>
+            <span className="text-green font-semibold">Cuts bill by 82%</span>
+          </p>
+        </motion.div>
+
+        {/* Card 3: Battery Energy Storage */}
+        <motion.div
+          whileHover={{ y: -3, scale: 1.02 }}
+          transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+          className="scada-panel p-4 border-teal/40 glow-teal relative shadow-sm overflow-hidden"
+        >
+          <div className="flex items-center justify-between text-text-dim text-xs mb-1 font-mono">
+            <span className="font-bold uppercase text-teal flex items-center gap-1.5">
+              <BatteryCharging className="w-4 h-4 text-teal animate-pulse" />
+              <span>Battery Energy</span>
+            </span>
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-teal/20 text-teal font-mono">
+              {dynamicSolarKw > dynamicDemandKw ? 'CHARGING' : 'STANDBY'}
+            </span>
+          </div>
+
+          <div className="flex items-baseline gap-2 mt-2">
+            <span className="text-3xl font-extrabold font-mono text-teal">
+              <AnimatedCounter value={dynamicBatterySoc} decimals={1} suffix="%" />
+            </span>
+            <span className="text-xs text-text-dim font-mono">
+              ({((dynamicBatterySoc / 100) * 10).toFixed(1)} kWh)
+            </span>
+          </div>
+
+          <p className="text-[11px] text-text-dim font-mono mt-1 flex items-center justify-between">
+            <span>Backup runtime: ~6.5 hrs</span>
+            <span className="text-teal font-semibold">98.4% Health</span>
+          </p>
+        </motion.div>
+
+        {/* Card 4: Clean Carbon Offset */}
+        <motion.div
+          whileHover={{ y: -3, scale: 1.02 }}
+          transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+          className="scada-panel p-4 border-blue/40 glow-blue relative shadow-sm overflow-hidden"
+        >
+          <div className="flex items-center justify-between text-text-dim text-xs mb-1 font-mono">
+            <span className="font-bold uppercase text-blue flex items-center gap-1.5">
+              <Leaf className="w-4 h-4 text-blue" />
+              <span>Clean Green Index</span>
+            </span>
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue/20 text-blue font-mono">
+              NET ZERO
+            </span>
+          </div>
+
+          <div className="flex items-baseline gap-2 mt-2">
+            <span className="text-3xl font-extrabold font-mono text-blue">
+              <AnimatedCounter value={todaySolarKwh * 0.82} decimals={1} suffix="kg" />
+            </span>
+            <span className="text-xs text-text-dim font-mono">CO₂ avoided</span>
+          </div>
+
+          <p className="text-[11px] text-text-dim font-mono mt-1 flex items-center justify-between">
+            <span>Trees Equivalent: {Math.max(1, Math.round(todaySolarKwh * 0.12))} 🌲</span>
+            <span className="text-blue font-semibold">100% Inverter Online</span>
+          </p>
+        </motion.div>
+      </div>
+
+      {/* ═══════════════════════════════════════════════════════════════════════
+          INTERACTIVE AI CAMERA SCANNER & FIX STUDIO SECTION
+          ═══════════════════════════════════════════════════════════════════════ */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Camera className="w-5 h-5 text-teal" />
+            <h2 className="text-base sm:text-lg font-bold text-text-main font-mono">
+              Live Camera Space Scanner & Fix Recommendations
+            </h2>
+          </div>
+          <span className="text-[11px] font-mono text-teal bg-teal/10 px-2 py-0.5 rounded border border-teal/30">
+            Open camera on any roof, balcony, wall or porch
+          </span>
+        </div>
+
+        {/* Live Camera Space Scanner Component */}
+        <LiveSpaceScanner onApplyConfig={handleConfigAppliedFromScanner} />
+      </div>
+
+      {/* ═══════════════════════════════════════════════════════════════════════
+          SHORT & INTERACTIVE FIX METHODS COMPARISON STRIP
+          ═══════════════════════════════════════════════════════════════════════ */}
+      <ScadaPanel
+        title="5 Effective Ways to Install Solar on Any Space"
+        subtitle="Very short & interactive guide comparing structural fix types"
+        accentTop
+      >
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3 pt-2">
+          {/* Way 1: Optimal 28° Tilt */}
+          <motion.div
+            whileHover={{ y: -3, scale: 1.02 }}
+            className="p-3.5 rounded-lg bg-panel-2 border border-line hover:border-amber/50 transition-all flex flex-col justify-between space-y-3 cursor-pointer group"
+            onClick={() => sounds.playClick(600)}
+          >
+            <div>
+              <div className="flex items-center justify-between">
+                <span className="text-xl">📐</span>
+                <span className="text-[8px] font-mono font-bold px-1.5 py-0.5 rounded bg-amber/20 text-amber border border-amber/40">
+                  MAX POWER
+                </span>
+              </div>
+              <h4 className="font-bold text-xs text-text-main mt-2 group-hover:text-amber transition-colors">
+                Optimal 28° South Tilt
+              </h4>
+              <p className="text-[11px] text-text-dim font-mono mt-1 leading-relaxed">
+                Heavy triangular frame with concrete ballast blocks. Zero roof puncture, zero leaks!
+              </p>
+            </div>
+            <div className="pt-2 border-t border-line/60 text-[10px] font-mono text-amber flex justify-between">
+              <span>+28% Sun Power</span>
+              <span>2-3 hrs fix</span>
+            </div>
+          </motion.div>
+
+          {/* Way 2: Elevated Pergola */}
+          <motion.div
+            whileHover={{ y: -3, scale: 1.02 }}
+            className="p-3.5 rounded-lg bg-panel-2 border border-line hover:border-teal/50 transition-all flex flex-col justify-between space-y-3 cursor-pointer group"
+            onClick={() => sounds.playClick(700)}
+          >
+            <div>
+              <div className="flex items-center justify-between">
+                <span className="text-xl">⛩️</span>
+                <span className="text-[8px] font-mono font-bold px-1.5 py-0.5 rounded bg-teal/20 text-teal border border-teal/40">
+                  100% USABLE
+                </span>
+              </div>
+              <h4 className="font-bold text-xs text-text-main mt-2 group-hover:text-teal transition-colors">
+                Elevated Pergola (8ft)
+              </h4>
+              <p className="text-[11px] text-text-dim font-mono mt-1 leading-relaxed">
+                8ft tall columns. Walk, sit, and dry clothes in cool shade while generating power overhead!
+              </p>
+            </div>
+            <div className="pt-2 border-t border-line/60 text-[10px] font-mono text-teal flex justify-between">
+              <span>Terrace Gazebo</span>
+              <span>1 Day fix</span>
+            </div>
+          </motion.div>
+
+          {/* Way 3: Balcony Railing Hook */}
+          <motion.div
+            whileHover={{ y: -3, scale: 1.02 }}
+            className="p-3.5 rounded-lg bg-panel-2 border border-line hover:border-green/50 transition-all flex flex-col justify-between space-y-3 cursor-pointer group"
+            onClick={() => sounds.playClick(800)}
+          >
+            <div>
+              <div className="flex items-center justify-between">
+                <span className="text-xl">🪝</span>
+                <span className="text-[8px] font-mono font-bold px-1.5 py-0.5 rounded bg-green/20 text-green border border-green/40">
+                  ZERO DRILL
+                </span>
+              </div>
+              <h4 className="font-bold text-xs text-text-main mt-2 group-hover:text-green transition-colors">
+                Balcony Hook & Plug
+              </h4>
+              <p className="text-[11px] text-text-dim font-mono mt-1 leading-relaxed">
+                Hooks onto apartment balcony railing. Plugs into normal 16A wall plug. Perfect for tenants!
+              </p>
+            </div>
+            <div className="pt-2 border-t border-line/60 text-[10px] font-mono text-green flex justify-between">
+              <span>15 min DIY</span>
+              <span>Plug & Play</span>
+            </div>
+          </motion.div>
+
+          {/* Way 4: Flush Clamp Mount */}
+          <motion.div
+            whileHover={{ y: -3, scale: 1.02 }}
+            className="p-3.5 rounded-lg bg-panel-2 border border-line hover:border-blue/50 transition-all flex flex-col justify-between space-y-3 cursor-pointer group"
+            onClick={() => sounds.playClick(900)}
+          >
+            <div>
+              <div className="flex items-center justify-between">
+                <span className="text-xl">🔩</span>
+                <span className="text-[8px] font-mono font-bold px-1.5 py-0.5 rounded bg-blue/20 text-blue border border-blue/40">
+                  STORM PROOF
+                </span>
+              </div>
+              <h4 className="font-bold text-xs text-text-main mt-2 group-hover:text-blue transition-colors">
+                Flush Seam Clamp
+              </h4>
+              <p className="text-[11px] text-text-dim font-mono mt-1 leading-relaxed">
+                Clamps directly onto sloped tile/tin ridges. Low profile resists 180 km/h cyclone winds.
+              </p>
+            </div>
+            <div className="pt-2 border-t border-line/60 text-[10px] font-mono text-blue flex justify-between">
+              <span>Zero Leakage</span>
+              <span>2 hrs fix</span>
+            </div>
+          </motion.div>
+
+          {/* Way 5: Window Solar Awning */}
+          <motion.div
+            whileHover={{ y: -3, scale: 1.02 }}
+            className="p-3.5 rounded-lg bg-panel-2 border border-line hover:border-amber/50 transition-all flex flex-col justify-between space-y-3 cursor-pointer group"
+            onClick={() => sounds.playClick(1000)}
+          >
+            <div>
+              <div className="flex items-center justify-between">
+                <span className="text-xl">🪟</span>
+                <span className="text-[8px] font-mono font-bold px-1.5 py-0.5 rounded bg-amber/20 text-amber border border-amber/40">
+                  AC COOLING
+                </span>
+              </div>
+              <h4 className="font-bold text-xs text-text-main mt-2 group-hover:text-amber transition-colors">
+                Window Awning Canopy
+              </h4>
+              <p className="text-[11px] text-text-dim font-mono mt-1 leading-relaxed">
+                Mounted at 45° angle over sunny windows. Cuts room heat by 4°C while generating electricity!
+              </p>
+            </div>
+            <div className="pt-2 border-t border-line/60 text-[10px] font-mono text-amber flex justify-between">
+              <span>-30% AC Bill</span>
+              <span>1 hr fix</span>
+            </div>
+          </motion.div>
+        </div>
+      </ScadaPanel>
+
+      {/* ═══════════════════════════════════════════════════════════════════════
+          OPTIONAL ADVANCED SCADA ENGINEERING VIEW (COLLAPSIBLE)
+          ═══════════════════════════════════════════════════════════════════════ */}
+      <div className="scada-panel p-4 bg-panel border-line">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Cpu className="w-4 h-4 text-teal" />
+            <h3 className="text-xs font-bold font-mono text-text-main uppercase tracking-wider">
+              Advanced Grid Energy Flow & Subsystem Telemetry
+            </h3>
+          </div>
+
+          <button
+            onClick={() => {
+              sounds.playClick(500);
+              setShowAdvancedScada(!showAdvancedScada);
+            }}
+            className="px-3 py-1 rounded bg-panel-2 border border-line text-xs font-mono text-text-dim hover:text-text-main hover:border-teal/50 transition-colors flex items-center gap-1.5"
+          >
+            <span>{showAdvancedScada ? 'Hide Engineering View' : 'Show Engineering View'}</span>
+            {showAdvancedScada ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+          </button>
+        </div>
+
+        <AnimatePresence>
+          {showAdvancedScada && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.3 }}
+              className="mt-4 pt-4 border-t border-line space-y-4"
+            >
+              <EnergyFlowDiagram
+                data={{
+                  timestamp: new Date().toISOString(),
+                  solar_kw: dynamicSolarKw,
+                  wind_kw: telemetry?.wind_kw ?? 412.0,
+                  total_renewable_kw: dynamicSolarKw + (telemetry?.wind_kw ?? 412.0),
+                  demand_kw: dynamicDemandKw,
+                  grid_import_kw: dynamicDemandKw > dynamicSolarKw ? dynamicDemandKw - dynamicSolarKw : 0,
+                  grid_export_kw: dynamicGridExportKw,
+                  battery_charge_kw: dynamicSolarKw > dynamicDemandKw ? 120.0 : 0,
+                  battery_discharge_kw: dynamicSolarKw < dynamicDemandKw ? 100.0 : 0,
+                  battery_soc_pct: dynamicBatterySoc,
+                  net_load_kw: dynamicDemandKw - dynamicSolarKw
+                }}
+              />
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs font-mono">
+                <div className="p-3 rounded bg-panel-2 border border-line flex items-center justify-between">
+                  <span className="text-text-dim">Predicted Solar Yield Tomorrow:</span>
+                  <span className="font-bold text-amber">
+                    {(prediction?.predicted_solar_kwh ?? 4250).toFixed(0)} kWh
+                  </span>
+                </div>
+                <div className="p-3 rounded bg-panel-2 border border-line flex items-center justify-between">
+                  <span className="text-text-dim">Optimal Battery Dispatch Buffer:</span>
+                  <span className="font-bold text-teal">
+                    {(optimization?.recommended_charge_kwh ?? 1420.5).toFixed(0)} kWh
+                  </span>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+
+      {/* ═════════════════════════════════════════════════════════════════════
+          MOBILE APP (NOW VS WITH SOLAR) SIMULATOR POPUP MODAL
+          ═════════════════════════════════════════════════════════════════════ */}
+      <AnimatePresence>
+        {showMobileSimulator && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-6"
+            onClick={() => setShowMobileSimulator(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, y: 30 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 30 }}
+              className="relative max-w-md w-full"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <MobileSolarApp onClose={() => setShowMobileSimulator(false)} />
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
   );
 };

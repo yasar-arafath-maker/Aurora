@@ -22,9 +22,19 @@ class WeatherForecastDay(BaseModel):
     wind_speed_ms: float
     condition: str            # e.g., 'Sunny', 'Partly Cloudy', 'Overcast', 'Windy'
 
+class WeatherForecastHour(BaseModel):
+    time: str
+    temperature_c: float
+    cloud_cover_pct: float
+    irradiance_w_m2: float
+    wind_speed_ms: float
+    expected_solar_kw: float
+    expected_wind_kw: float
+
 class WeatherForecastResponse(BaseModel):
     current: WeatherCurrent
     forecast: List[WeatherForecastDay]
+    hourly: Optional[List[WeatherForecastHour]] = None
     source: str = "demo"
 
 class WeatherImpactChain(BaseModel):

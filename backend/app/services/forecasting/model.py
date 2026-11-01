@@ -137,15 +137,37 @@ class ForecastingService:
             mask = actual > 0.1
             return float(np.mean(np.abs((actual[mask] - pred[mask]) / actual[mask])) * 100) if mask.any() else 0.0
 
+        solar_rmse = float(math.sqrt(mean_squared_error(ys_test, pred_solar)))
+        wind_rmse  = float(math.sqrt(mean_squared_error(yw_test, pred_wind)))
+
+        # Standard 24-hour persistence baseline: y_t = y_{t-24}
+        pers_solar = np.array([y_solar[split + i - 24] for i in range(len(ys_test))])
+        pers_wind  = np.array([y_wind[split + i - 24] for i in range(len(yw_test))])
+
+        pers_solar_rmse = float(math.sqrt(mean_squared_error(ys_test, pers_solar)))
+        pers_solar_mae  = float(mean_absolute_error(ys_test, pers_solar))
+        pers_wind_rmse  = float(math.sqrt(mean_squared_error(yw_test, pers_wind)))
+        pers_wind_mae   = float(mean_absolute_error(yw_test, pers_wind))
+
+        # Skill Score = (1 - RMSE_model / RMSE_persistence) * 100%
+        solar_skill_score = float((1.0 - (solar_rmse / max(1e-3, pers_solar_rmse))) * 100.0)
+        wind_skill_score  = float((1.0 - (wind_rmse / max(1e-3, pers_wind_rmse))) * 100.0)
+
         self._accuracy = {
             "solar_mae": float(mean_absolute_error(ys_test, pred_solar)),
-            "solar_rmse": float(math.sqrt(mean_squared_error(ys_test, pred_solar))),
+            "solar_rmse": solar_rmse,
             "solar_mape": mape(ys_test, pred_solar),
             "solar_r2": float(r2_score(ys_test, pred_solar)),
+            "solar_persistence_rmse": round(pers_solar_rmse, 2),
+            "solar_persistence_mae": round(pers_solar_mae, 2),
+            "solar_skill_score_pct": round(solar_skill_score, 1),
             "wind_mae": float(mean_absolute_error(yw_test, pred_wind)),
-            "wind_rmse": float(math.sqrt(mean_squared_error(yw_test, pred_wind))),
+            "wind_rmse": wind_rmse,
             "wind_mape": mape(yw_test, pred_wind),
             "wind_r2": float(r2_score(yw_test, pred_wind)),
+            "wind_persistence_rmse": round(pers_wind_rmse, 2),
+            "wind_persistence_mae": round(pers_wind_mae, 2),
+            "wind_skill_score_pct": round(wind_skill_score, 1),
             "combined_mae": float(mean_absolute_error(actual_total, pred_total)),
             "combined_rmse": float(math.sqrt(mean_squared_error(actual_total, pred_total))),
             "combined_mape": mape(actual_total, pred_total),
@@ -168,10 +190,36 @@ class ForecastingService:
                 "predicted_total": round(float(pred_total[i]), 2),
             })
         self._accuracy_history = history
+
+        # Build 24-hour comparative benchmark day (last 24 hours of holdout)
+        benchmark_24h = []
+        last_day_indices = range(len(ys_test) - 24, len(ys_test))
+        doy = test_rows[-1]["timestamp"].timetuple().tm_yday
+        for idx in last_day_indices:
+            h = test_rows[idx]["timestamp"].hour
+            cs_irr = solar_irradiance_wm2(h, 0.0, doy)
+            # Physical clear-sky envelope matching 1440 kWp array
+            cs_envelope = solar_kwh_from_irradiance(cs_irr, panel_area_m2=8000.0, efficiency=0.18) if cs_irr > 5.0 else 0.0
+
+            act_s = float(ys_test[idx])
+            pred_s = float(pred_solar[idx])
+            pers_s = float(pers_solar[idx])
+            pred_s_bounded = min(cs_envelope, max(0.0, pred_s)) if cs_envelope > 0 else 0.0
+
+            benchmark_24h.append({
+                "hour": h,
+                "time": f"{h:02d}:00",
+                "actual_kw": round(act_s, 1),
+                "predicted_kw": round(pred_s_bounded, 1),
+                "persistence_kw": round(pers_s, 1),
+                "clearsky_envelope_kw": round(cs_envelope, 1),
+            })
+        benchmark_24h.sort(key=lambda x: x["hour"])
+        self._benchmark_24h = benchmark_24h
         self._is_trained = True
 
-        print(f"[Forecasting] Training complete. Solar R²={self._accuracy['solar_r2']:.4f}, "
-              f"Wind R²={self._accuracy['wind_r2']:.4f}")
+        print(f"[Forecasting] Training complete. Solar R²={self._accuracy['solar_r2']:.4f} (Skill={solar_skill_score:+.1f}%), "
+              f"Wind R²={self._accuracy['wind_r2']:.4f} (Skill={wind_skill_score:+.1f}%)")
 
     def _predict_single_hour(self, feature_row: Dict[str, Any]) -> Tuple[float, float, float, float, float, float]:
         """Returns (solar_kwh, wind_kwh, solar_lower, solar_upper, wind_lower, wind_upper)."""
@@ -180,10 +228,10 @@ class ForecastingService:
         X = self._scaler.transform([_build_features(feature_row)])
         solar = float(max(0, self._solar_model.predict(X)[0]))
         wind  = float(max(0, self._wind_model.predict(X)[0]))
-        s_lo  = float(max(0, self._solar_q10.predict(X)[0]))
-        s_hi  = float(max(0, self._solar_q90.predict(X)[0]))
-        w_lo  = float(max(0, self._wind_q10.predict(X)[0]))
-        w_hi  = float(max(0, self._wind_q90.predict(X)[0]))
+        s_lo  = float(min(solar, max(0, self._solar_q10.predict(X)[0])))
+        s_hi  = float(max(solar, self._solar_q90.predict(X)[0]))
+        w_lo  = float(min(wind, max(0, self._wind_q10.predict(X)[0])))
+        w_hi  = float(max(wind, self._wind_q90.predict(X)[0]))
         return solar, wind, s_lo, s_hi, w_lo, w_hi
 
     def predict_day(self, target_date: date) -> Dict[str, Any]:
@@ -261,7 +309,11 @@ class ForecastingService:
     def accuracy_metrics(self) -> Dict[str, Any]:
         if not self._is_trained:
             self.train()
-        return {**self._accuracy, "history": self._accuracy_history}
+        return {
+            **self._accuracy,
+            "history": self._accuracy_history,
+            "comparative_24h_benchmark": getattr(self, "_benchmark_24h", []),
+        }
 
     @property
     def is_trained(self) -> bool:

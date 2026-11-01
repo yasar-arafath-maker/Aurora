@@ -421,7 +421,7 @@ export const SolarPage: React.FC = () => {
     setToastMessage('🔊 Speaking AI Installation Recommendations...');
   };
 
-  // Start Hardware Camera Stream
+  // Start Hardware Camera Stream (Supports Laptop Front Camera & Rear Camera)
   const startCamera = async () => {
     setCameraLoading(true);
     setCameraError(null);
@@ -429,25 +429,49 @@ export const SolarPage: React.FC = () => {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         throw new Error('Camera MediaDevices API not available in this environment.');
       }
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
-        audio: false
-      });
+      let stream: MediaStream;
+      try {
+        // 1. Try standard webcam constraints (works universally on laptops & desktops)
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { width: { ideal: 1280 }, height: { ideal: 720 } },
+          audio: false
+        });
+      } catch (err1) {
+        try {
+          // 2. Fallback to front-facing user webcam
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: 'user' },
+            audio: false
+          });
+        } catch (err2) {
+          // 3. Fallback to any available video stream
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: true,
+            audio: false
+          });
+        }
+      }
+
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         videoRef.current.play();
         setCameraActive(true);
         setUploadedImage(null);
-        setToastMessage('✓ Camera active! Scan your roof or terrace floor.');
+        setToastMessage('✓ Laptop Camera active! Live Space Scanning & AI Auto-Fit engaged.');
         if (speechEnabled) {
-          speakAdvice('Camera activated. Aim at your rooftop surface to scan placement boundaries.');
+          speakAdvice('Camera activated. Aim at your rooftop or floor surface to scan boundaries.');
         }
+
+        // Auto-run AI fit after 1.2 seconds so it automatically fits without extra clicks!
+        setTimeout(() => {
+          handleAutoFitToSpace();
+        }, 1200);
       }
     } catch (err: any) {
       console.warn('Camera stream error:', err);
       setCameraError(err.message || 'Camera access declined or unavailable.');
       setCameraActive(false);
-      setToastMessage('ℹ Using high-resolution simulated rooftop preset.');
+      setToastMessage('ℹ Camera permission not granted. Using high-resolution simulated space.');
     } finally {
       setCameraLoading(false);
     }

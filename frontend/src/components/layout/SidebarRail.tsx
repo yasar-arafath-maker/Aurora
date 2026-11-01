@@ -52,7 +52,6 @@ export const SidebarRail: React.FC<SidebarRailProps> = ({ activePage, onSelectPa
     { id: 'weather', label: 'Weather Impact', icon: CloudSun },
     { id: 'scenario', label: 'Scenario Lab', icon: FlaskConical },
     { id: 'reports', label: 'Shift Reports', icon: FileText },
-    { id: 'data', label: 'Data Management', icon: Database },
     { id: 'settings', label: 'System Config', icon: Settings },
   ];
 

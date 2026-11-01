@@ -69,13 +69,31 @@ async def register(user_in: UserCreate, db: AsyncSession = Depends(get_db)):
     await db.refresh(user)
     return user
 
+from fastapi import Request
+
 @router.post("/login", response_model=Token)
-async def login(login_data: UserLogin, db: AsyncSession = Depends(get_db)):
-    stmt = select(User).where(User.email == login_data.email)
+async def login(request: Request, db: AsyncSession = Depends(get_db)):
+    content_type = request.headers.get("content-type", "")
+    if "application/json" in content_type:
+        body = await request.json()
+        email = body.get("email") or body.get("username")
+        password = body.get("password")
+    else:
+        form = await request.form()
+        email = form.get("username") or form.get("email")
+        password = form.get("password")
+
+    if not email or not password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email and password are required"
+        )
+
+    stmt = select(User).where(User.email == email)
     result = await db.execute(stmt)
     user = result.scalar_one_or_none()
     
-    if not user or not verify_password(login_data.password, user.password_hash):
+    if not user or not verify_password(password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",

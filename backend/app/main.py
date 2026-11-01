@@ -43,10 +43,42 @@ app.add_middleware(
 
 app.include_router(api_router, prefix=settings.API_V1_STR)
 
-@app.get("/")
-async def root():
-    return {"name": "AURORA", "status": "active", "version": "1.0.0"}
+import os
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 
+# Health check route
 @app.get("/health")
 async def health():
     return {"status": "healthy", "service": "AURORA API", "version": "1.0.0"}
+
+# Static Files & SPA Frontend Serving (for Render / Production)
+dist_candidates = [
+    os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "frontend", "dist")),
+    os.path.abspath(os.path.join(os.getcwd(), "frontend", "dist")),
+    os.path.abspath(os.path.join(os.getcwd(), "..", "frontend", "dist")),
+    "/app/frontend/dist",
+]
+
+frontend_dist = next((p for p in dist_candidates if os.path.exists(p) and os.path.isdir(p)), None)
+
+if frontend_dist:
+    assets_dir = os.path.join(frontend_dist, "assets")
+    if os.path.exists(assets_dir):
+        app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
+
+    @app.get("/{full_path:path}")
+    async def serve_spa_app(full_path: str):
+        if full_path.startswith("api/") or full_path in ("docs", "redoc", "openapi.json"):
+            return None
+        candidate_file = os.path.join(frontend_dist, full_path)
+        if full_path and os.path.isfile(candidate_file):
+            return FileResponse(candidate_file)
+        index_file = os.path.join(frontend_dist, "index.html")
+        if os.path.isfile(index_file):
+            return FileResponse(index_file)
+        return {"name": "AURORA", "status": "active", "version": "1.0.0"}
+else:
+    @app.get("/")
+    async def root():
+        return {"name": "AURORA", "status": "active", "version": "1.0.0"}

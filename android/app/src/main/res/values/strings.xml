@@ -1,0 +1,16 @@
+<resources>
+    <string name="app_name">Aurora Solar</string>
+    <string name="title_now">NOW (Empty Space)</string>
+    <string name="title_with_solar">WITH SOLAR</string>
+    <string name="drag_hint">Drag slider left / right to compare ↔</string>
+    <string name="monthly_savings">Monthly Savings</string>
+    <string name="system_size">System Size</string>
+    <string name="green_units">Free Solar Units</string>
+    <string name="subsidy_text">Govt Subsidy</string>
+    <string name="panels_count">%d Panels</string>
+    <string name="snap_camera">Snap Live Camera</string>
+    <string name="call_expert">Call Approved Installer</string>
+    <string name="share_whatsapp">Share on WhatsApp</string>
+    <string name="net_cost">Net Cost After Subsidy</string>
+    <string name="lifetime_savings">25-Yr Lifetime Savings</string>
+</resources>
